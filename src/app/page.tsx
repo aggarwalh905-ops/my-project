@@ -173,25 +173,22 @@ export default function AIStudio() {
   };
 
   const shareProject = async () => {
-    if (!image) {
-      alert("Please generate or select an image first!");
-      return;
-    }
-
+    if (!image) return;
     setLoading(true);
 
     try {
       const canvas = document.createElement("canvas");
+      
+      // Fix: Add Type Assertion or Null Check
       const ctx = canvas.getContext("2d");
 
-      // Check if context exists to avoid null error
       if (!ctx) {
-        throw new Error("Could not create canvas context");
+        throw new Error("Failed to get 2D context");
       }
 
       const img = new Image();
       img.crossOrigin = "anonymous"; 
-      img.src = image;
+      img.src = image + (image.includes('?') ? '&' : '?') + 't=' + Date.now();
 
       await new Promise((resolve, reject) => {
         img.onload = resolve;
@@ -201,30 +198,17 @@ export default function AIStudio() {
       canvas.width = img.width;
       canvas.height = img.height;
 
-      // Base image draw karein
+      // Ab ctx safely use kar sakte hain
       ctx.drawImage(img, 0, 0);
 
-      // Watermark Styling
-      const fontSize = Math.floor(canvas.width * 0.035); 
+      // Watermark logic...
+      const fontSize = Math.floor(canvas.width * 0.035);
       ctx.font = `bold ${fontSize}px sans-serif`;
-      
+      ctx.fillStyle = "white";
       ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
       ctx.shadowBlur = 15;
-      ctx.fillStyle = "white";
-      
       const watermarkText = "IMAGYNEX AI";
-      const padding = canvas.width * 0.03;
-      
-      const textWidth = ctx.measureText(watermarkText).width;
-      
-      ctx.fillText(
-        watermarkText, 
-        canvas.width - textWidth - padding, 
-        canvas.height - padding
-      );
-
-      // Reset shadow taaki blob clean rahe
-      ctx.shadowBlur = 0;
+      ctx.fillText(watermarkText, canvas.width - ctx.measureText(watermarkText).width - 20, canvas.height - 20);
 
       canvas.toBlob(async (blob) => {
         if (!blob) {
@@ -232,28 +216,32 @@ export default function AIStudio() {
           return;
         }
 
-        const file = new File([blob], `Imagynex-${Date.now()}.jpg`, { type: "image/jpeg" });
+        const fileName = `Imagynex-${Date.now()}.png`;
+        const file = new File([blob], fileName, { type: "image/png" });
+
+        const shareData = {
+          title: 'Imagynex AI Art',
+          text: `Check out my creation: ${prompt}`,
+          files: [file],
+        };
 
         try {
-          if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              files: [file],
-              title: 'Created with Imagynex AI',
-              text: `Imagine: ${prompt}`,
-            });
+          if (navigator.canShare && navigator.canShare(shareData)) {
+            await navigator.share(shareData);
           } else {
             copyImageLinkFallback();
           }
         } catch (shareErr) {
-          console.warn("Share failed, falling back to copy", shareErr);
-          copyImageLinkFallback();
+          if (shareErr instanceof Error && shareErr.name !== 'AbortError') {
+            copyImageLinkFallback();
+          }
         } finally {
           setLoading(false);
         }
-      }, "image/jpeg", 0.95);
+      }, "image/png");
 
     } catch (err) {
-      console.error("Watermark/Share error:", err);
+      console.error(err);
       copyImageLinkFallback();
       setLoading(false);
     }
@@ -261,10 +249,23 @@ export default function AIStudio() {
 
   // Fallback function agar share support na ho
   const copyImageLinkFallback = () => {
-    navigator.clipboard.writeText(image);
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2000);
-    alert("Share not supported on this browser. Image link copied to clipboard!");
+    // 1. Image URL copy karein
+    if (image) {
+      navigator.clipboard.writeText(image);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    }
+
+    // 2. Image ko auto-download karwa dein (Taaki user manually share kar sake)
+    const link = document.createElement("a");
+    link.href = image;
+    link.download = `Imagynex-AI-${Date.now()}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // 3. Informative Message
+    alert("Sharing is not supported on this browser.\n\n✅ Image Downloaded\n✅ Link Copied to Clipboard");
   };
 
   useEffect(() => {
