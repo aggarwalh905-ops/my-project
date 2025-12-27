@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Imagynex AI",
     description: "The intersection of human creativity and machine intelligence.",
-    url: "https://imagynex.ai", // Replace with your actual URL
+    url: "https://imagynexai.vercel.app", // Replace with your actual URL
     siteName: "Imagynex AI",
     type: "website",
   },

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { 
   Download, Sparkles, Loader2, Image as ImageIcon, 
   Zap, Maximize, MessageSquareText, RefreshCw,
-  MousePointer2, LayoutGrid, Menu, X, Hash,
+  MousePointer2, LayoutGrid, Menu, X, Share2, Hash,
   History, Sliders, Ban, Copy, Check, Trash2
 } from 'lucide-react';
 
@@ -71,6 +71,7 @@ export default function AIStudio() {
   const [selectedStyle, setSelectedStyle] = useState("Default");
   const [communityImages, setCommunityImages] = useState<any[]>([]);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const styles = [
     { name: "Default", suffix: "" },
@@ -103,14 +104,47 @@ export default function AIStudio() {
   };
 
   const enhancePrompt = async () => {
-    if (!prompt) return;
-    setEnhancing(true);
-    try {
-      const response = await fetch(`https://text.pollinations.ai/Improve this image prompt for AI generation: ${prompt}`);
-      const data = await response.text();
-      setPrompt(data.trim());
-    } catch (error) { console.error(error); }
-    finally { setEnhancing(false); }
+    if (!prompt) return;
+    setEnhancing(true);
+    try {
+      // System instructions add ki gayi hain taaki AI extra baatein na kare
+      const systemInstruction = "Act as a professional AI image prompt engineer. Expand the user's prompt with artistic details, lighting, and textures. Return ONLY the improved prompt text. Do not include introductory text, explanations, or quotes.";
+      const encodedPrompt = encodeURIComponent(`${systemInstruction} \n\nUser Prompt: ${prompt}`);
+      
+      const response = await fetch(`https://text.pollinations.ai/${encodedPrompt}`);
+      let data = await response.text();
+      
+      // Cleaning: Agar AI phir bhi quotes ya "Prompt:" likh de toh use remove karne ke liye
+      data = data.replace(/^(Prompt:|Improved Prompt:|")|"$|^\s+|\s+$/g, '');
+      
+      setPrompt(data.trim());
+    } catch (error) { 
+      console.error("Enhancement failed:", error); 
+    }
+    finally { setEnhancing(false); }
+  };
+
+  const applyMagicPrompt = () => {
+    const modifiers = [
+      "cinematic lighting, 8k, highly detailed, masterpiece",
+      "bioluminescent, surreal atmosphere, dreaming vibe",
+      "macro photography, sharp focus, intricate textures",
+      "neon glow, cyberpunk aesthetic, retro-futurism",
+      "soft moonlight, ethereal fog, fantasy art style",
+      "octane render, unreal engine 5, volumetric lighting"
+    ];
+
+    const randomMod = modifiers[Math.floor(Math.random() * modifiers.length)];
+
+    if (!prompt) {
+      const randomBases = ["A futuristic city", "A mystical forest", "A cosmic astronaut", "A majestic lion"];
+      setPrompt(randomBases[Math.floor(Math.random() * randomBases.length)]);
+    } else {
+      // Check taaki baar-baar same cheez add na ho
+      if (!prompt.includes(randomMod)) {
+        setPrompt(`${prompt.trim()}, ${randomMod}`);
+      }
+    }
   };
 
   const downloadImage = async (imgUrl: string) => {
@@ -118,15 +152,168 @@ export default function AIStudio() {
       const response = await fetch(imgUrl);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
+      
+      // Filename ko saaf (clean) karne ke liye logic
+      // Prompt ke pehle 3 words lega aur special characters remove kar dega
+      const promptSlug = prompt
+        ? prompt.split(" ").slice(0, 3).join("-").replace(/[^a-z0-9]/gi, "_").toLowerCase()
+        : "synthesis";
+
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Imagynex-${Date.now()}.jpg`;
+      link.download = `Imagynex-${promptSlug}-${Date.now()}.jpg`; // New Filename Format
+      
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      window.URL.revokeObjectURL(url); // Memory saaf karne ke liye
     } catch (err) {
       window.open(imgUrl, '_blank');
     }
+  };
+
+  const shareProject = async () => {
+    if (!image) {
+      alert("Please generate or select an image first!");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      // Check if context exists to avoid null error
+      if (!ctx) {
+        throw new Error("Could not create canvas context");
+      }
+
+      const img = new Image();
+      img.crossOrigin = "anonymous"; 
+      img.src = image;
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error("Image failed to load"));
+      });
+
+      canvas.width = img.width;
+      canvas.height = img.height;
+
+      // Base image draw karein
+      ctx.drawImage(img, 0, 0);
+
+      // Watermark Styling
+      const fontSize = Math.floor(canvas.width * 0.035); 
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      
+      ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = "white";
+      
+      const watermarkText = "IMAGYNEX AI";
+      const padding = canvas.width * 0.03;
+      
+      const textWidth = ctx.measureText(watermarkText).width;
+      
+      ctx.fillText(
+        watermarkText, 
+        canvas.width - textWidth - padding, 
+        canvas.height - padding
+      );
+
+      // Reset shadow taaki blob clean rahe
+      ctx.shadowBlur = 0;
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          setLoading(false);
+          return;
+        }
+
+        const file = new File([blob], `Imagynex-${Date.now()}.jpg`, { type: "image/jpeg" });
+
+        try {
+          if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: 'Created with Imagynex AI',
+              text: `Imagine: ${prompt}`,
+            });
+          } else {
+            copyImageLinkFallback();
+          }
+        } catch (shareErr) {
+          console.warn("Share failed, falling back to copy", shareErr);
+          copyImageLinkFallback();
+        } finally {
+          setLoading(false);
+        }
+      }, "image/jpeg", 0.95);
+
+    } catch (err) {
+      console.error("Watermark/Share error:", err);
+      copyImageLinkFallback();
+      setLoading(false);
+    }
+  };
+
+  // Fallback function agar share support na ho
+  const copyImageLinkFallback = () => {
+    navigator.clipboard.writeText(image);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+    alert("Share not supported on this browser. Image link copied to clipboard!");
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const cloudId = params.get('id');
+    const sharedPrompt = params.get('prompt');
+    const sharedImg = params.get('img');
+
+    // Case A: Agar Cloud ID hai toh Firebase se fetch karega
+    if (cloudId) {
+      const fetchCloudData = async () => {
+        setLoading(true);
+        try {
+          const { getDoc, doc } = await import("firebase/firestore");
+          const docSnap = await getDoc(doc(db, "gallery", cloudId));
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setPrompt(data.prompt);
+            setImage(data.imageUrl);
+            setSelectedStyle(data.style || "Default");
+            setSeed(data.seed || "");
+          }
+        } catch (err) { console.error("Cloud fetch error:", err); }
+        finally { setLoading(false); }
+      };
+      fetchCloudData();
+    } 
+    // Case B: Agar Local share hai toh URL se uthayega
+    else if (sharedPrompt) {
+      setPrompt(sharedPrompt);
+      if (sharedImg) setImage(sharedImg);
+      setSeed(params.get('seed') || "");
+      setSelectedStyle(params.get('style') || "Default");
+    }
+  }, []);
+
+  const handleImageSelection = (item: any) => {
+    // 1. Image set karein canvas par
+    setImage(item.imageUrl || item.url);
+    
+    // 2. Prompt ko auto-fill karein
+    setPrompt(item.prompt);
+    
+    // 3. Style aur Seed bhi update karein (taki exact variant reload ho)
+    if (item.style) setSelectedStyle(item.style);
+    if (item.seed) setSeed(item.seed);
+
+    // 4. Page ke upar (Canvas) par scroll karein (Mobile users ke liye best hai)
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const removeFromHistory = async (e: React.MouseEvent, index: number, firestoreId?: string) => {
@@ -170,7 +357,17 @@ export default function AIStudio() {
     setLoading(true);
     setSaveStatus(null); 
     
-    const finalSeed = overrideSeed || (seed !== "" ? Number(seed) : Math.floor(Math.random() * 1000000));
+    // Logic: Agar user ne "New Variant" click kiya toh overrideSeed aayega, 
+    // nahi toh input field ka seed use hoga, warna random generate hoga.
+    const finalSeed = overrideSeed !== undefined 
+      ? overrideSeed 
+      : (seed !== "" ? Number(seed) : Math.floor(Math.random() * 1000000));
+
+    // Seed state ko update kar rahe hain taaki user ko pata chale kaunsa seed use hua
+    if (overrideSeed !== undefined || seed === "") {
+      setSeed(finalSeed);
+    }
+
     let w = 1024, h = 1024;
     if (ratio === "16:9") { w = 1280; h = 720; }
     if (ratio === "9:16") { w = 720; h = 1280; }
@@ -178,11 +375,14 @@ export default function AIStudio() {
     const styleSuffix = styles.find(s => s.name === selectedStyle)?.suffix || "";
     const negPart = negativePrompt ? `&negative=${encodeURIComponent(negativePrompt)}` : "";
     const fullPrompt = `${prompt}${styleSuffix}`;
+    
+    // URL with finalSeed
     const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=${w}&height=${h}&model=${model}&seed=${finalSeed}&nologo=true${negPart}`;
     
     const img = new Image();
     img.src = url;
     
+    // Jab image successfully load ho jaye
     img.onload = async () => {
       setImage(url);
       setLoading(false);
@@ -194,6 +394,7 @@ export default function AIStudio() {
           imageUrl: url,
           prompt: fullPrompt,
           style: selectedStyle,
+          seed: finalSeed, // Store seed in Firebase too
           createdAt: serverTimestamp(),
         });
 
@@ -203,11 +404,18 @@ export default function AIStudio() {
         localStorage.setItem('imagynex_history', JSON.stringify(updatedHistory));
         setSaveStatus('cloud');
       } catch (e) {
+        console.error("Firebase Save Error:", e);
         const updatedHistory = [newEntry, ...history].slice(0, 15);
         setHistory(updatedHistory);
         localStorage.setItem('imagynex_history', JSON.stringify(updatedHistory));
         setSaveStatus('local');
       }
+    };
+
+    // Agar image load hone mein error aaye (Network issue/API down)
+    img.onerror = () => {
+      setLoading(false);
+      alert("Neural engine response failed. Please try again.");
     };
   };
 
@@ -270,19 +478,36 @@ export default function AIStudio() {
             <div className="space-y-3">
               <div className="flex justify-between items-center px-1">
                 <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Input Prompt</label>
+                
                 <div className="flex gap-3 md:gap-4">
+                  {/* --- MAGIC BUTTON ADDED HERE --- */}
+                  <button 
+                    onClick={applyMagicPrompt} 
+                    className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-black text-amber-400 uppercase tracking-widest hover:text-amber-300 transition"
+                  >
+                    <Sparkles size={12} fill="currentColor" /> 
+                    <span className="hidden xs:inline">Magic</span>
+                  </button>
+
                   <button onClick={handleCopy} disabled={!prompt} className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-black text-zinc-400 uppercase tracking-widest hover:text-white disabled:opacity-20 transition">
                     {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
                     <span className="hidden xs:inline">{copied ? "Copied" : "Copy"}</span>
                   </button>
+
                   <button onClick={enhancePrompt} disabled={enhancing || !prompt} className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300 disabled:opacity-20 transition">
-                    {enhancing ? <Loader2 className="animate-spin" size={12} /> : <MessageSquareText size={12} />} Enhance
+                    {enhancing ? <Loader2 className="animate-spin" size={12} /> : <MessageSquareText size={12} />} 
+                    <span className="hidden xs:inline">Enhance</span>
                   </button>
                 </div>
               </div>
-              <textarea className="w-full bg-black/60 border border-white/5 rounded-2xl p-4 md:p-5 text-sm md:text-lg outline-none focus:border-indigo-600/50 focus:ring-4 focus:ring-indigo-600/5 transition h-32 md:h-28 resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Describe your wildest imagination..." />
-            </div>
 
+              <textarea 
+                className="w-full bg-black/60 border border-white/5 rounded-2xl p-4 md:p-5 text-sm md:text-lg outline-none focus:border-indigo-600/50 focus:ring-4 focus:ring-indigo-600/5 transition h-32 md:h-28 resize-none" 
+                value={prompt} 
+                onChange={(e) => setPrompt(e.target.value)} 
+                placeholder="Describe your wildest imagination..." 
+              />
+            </div>
             <div className="space-y-4">
               <button onClick={() => setShowAdvanced(!showAdvanced)} className="flex items-center gap-2 text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">
                 <Sliders size={12} /> {showAdvanced ? "Hide" : "Show"} Advanced Settings
@@ -340,6 +565,22 @@ export default function AIStudio() {
                       <button onClick={() => downloadImage(image)} className="w-full md:w-auto bg-white text-black px-8 py-4 rounded-full font-black text-[10px] tracking-widest flex items-center justify-center gap-2 hover:scale-105 transition shadow-2xl uppercase">
                         <Download size={18}/> Download
                       </button>
+                      <button 
+                        onClick={shareProject}
+                        disabled={!image || loading}
+                        className={`w-full md:w-auto px-8 py-4 rounded-full font-black text-[10px] tracking-widest flex items-center justify-center gap-2 transition shadow-2xl uppercase ${
+                          !image || loading 
+                            ? "opacity-50 cursor-not-allowed bg-zinc-800" 
+                            : "bg-zinc-900/80 backdrop-blur-md text-white border border-white/10 hover:bg-zinc-800"
+                        }`}
+                      >
+                        {loading ? (
+                          <Loader2 size={18} className="animate-spin text-indigo-400" />
+                        ) : (
+                          <Share2 size={18} className="text-indigo-400" />
+                        )}
+                        {loading ? "Preparing File..." : "Share Masterpiece"}
+                      </button>
                       <button onClick={() => generateImage(Math.floor(Math.random()*999999))} className="w-full md:w-auto bg-indigo-600 text-white px-8 py-4 rounded-full font-black text-[10px] tracking-widest flex items-center justify-center gap-2 hover:scale-105 transition shadow-2xl backdrop-blur-md uppercase">
                         <RefreshCw size={16}/> New Variant
                       </button>
@@ -369,11 +610,28 @@ export default function AIStudio() {
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 md:gap-3">
                 {history.map((item, idx) => (
-                  <div key={idx} onClick={() => setImage(item.url)} className="aspect-square rounded-xl md:rounded-2xl overflow-hidden border border-white/5 cursor-pointer hover:border-indigo-500 transition group relative">
+                  <div 
+                    key={idx} 
+                    onClick={() => handleImageSelection(item)} 
+                    className="aspect-square rounded-xl md:rounded-2xl overflow-hidden border border-white/5 cursor-pointer hover:border-indigo-500 transition group relative"
+                  >
                     <img src={item.url} className="w-full h-full object-cover" alt="History" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
-                      <div className="bg-indigo-600 p-1.5 md:p-2 rounded-lg text-white"><Maximize size={14} /></div>
-                      <button onClick={(e) => removeFromHistory(e, idx, item.firestoreId)} className="bg-red-600 p-1.5 md:p-2 rounded-lg text-white hover:bg-red-500 transition"><Trash2 size={14} /></button>
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center gap-2 p-2 text-center">
+                      <p className="text-[7px] text-white font-bold uppercase tracking-tighter line-clamp-2 px-1">
+                        {item.prompt}
+                      </p>
+                      <div className="flex gap-2">
+                        <div className="bg-indigo-600 p-1.5 rounded-lg text-white"><Maximize size={12} /></div>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation(); // Taaki image select na ho jaye delete karne par
+                            removeFromHistory(e, idx, item.firestoreId);
+                          }} 
+                          className="bg-red-600 p-1.5 rounded-lg text-white hover:bg-red-500 transition"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -396,10 +654,21 @@ export default function AIStudio() {
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
               {communityImages.map((data, i) => (
-                <div key={data.id || i} className="aspect-[4/5] rounded-[24px] md:rounded-[32px] overflow-hidden border border-white/5 relative group hover:border-indigo-500/50 transition cursor-pointer" onClick={() => setImage(data.imageUrl)}>
+                <div 
+                  key={data.id || i} 
+                  className="aspect-[4/5] rounded-[24px] md:rounded-[32px] overflow-hidden border border-white/5 relative group hover:border-indigo-500/50 transition cursor-pointer" 
+                  onClick={() => handleImageSelection(data)}
+                >
                   <img src={data.imageUrl} className="w-full h-full object-cover" alt="Feed" />
-                  <div className="absolute bottom-3 left-3 right-3 p-3 bg-black/40 backdrop-blur-md rounded-2xl opacity-0 group-hover:opacity-100 transition">
-                    <p className="text-[8px] font-bold text-white truncate uppercase tracking-tighter">{data.prompt || "Neural Synthesis"}</p>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition flex flex-col justify-end p-4">
+                    <div className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/10">
+                      <p className="text-[8px] font-black text-white truncate uppercase tracking-widest mb-1">
+                        {data.prompt || "Neural Synthesis"}
+                      </p>
+                      <p className="text-[7px] text-indigo-400 font-bold uppercase tracking-widest">
+                        Click to remix →
+                      </p>
+                    </div>
                   </div>
                 </div>
               ))}
