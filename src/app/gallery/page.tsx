@@ -79,10 +79,21 @@ export default function Gallery() {
     e.stopPropagation();
     if (window.confirm("CRITICAL: Permanent Deletion?")) {
       try {
+        // Admin bypass ke liye query parameter pass karna zaruri hai
+        const adminKey = process.env.NEXT_PUBLIC_ADMIN_KEY;
+        
+        // Note: Firebase Web SDK (v9+) direct deleteDoc mein query params support nahi karta.
+        // Iska standard solution ye hai ki rules mein 'Admin Role' check kiya jaye.
+        
         await deleteDoc(doc(db, "gallery", id));
+        
+        // UI update
+        setImages(prev => prev.filter(img => img.id !== id));
         setTotalCount(prev => prev - 1);
+        alert("Deleted successfully.");
       } catch (error) {
-        alert("Unauthorized.");
+        console.error(error);
+        alert("Unauthorized: You don't have permission to delete this.");
       }
     }
   };
