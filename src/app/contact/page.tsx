@@ -1,79 +1,157 @@
 "use client";
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Mail, Send, MessageSquare, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { db } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { Sparkles, Send, Mail, MessageSquare, CheckCircle2, Loader2, ArrowLeft } from 'lucide-react';
 
-export default function ContactPage() {
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+export default function Contact() {
+  const [formData, setFormData] = useState({ name: "", email: "", message: "" });
+  const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus('sending');
-    setTimeout(() => setStatus('sent'), 1500);
+    setStatus("loading");
+    try {
+      await addDoc(collection(db, "messages"), {
+        ...formData,
+        createdAt: serverTimestamp(),
+      });
+      setStatus("success");
+      setFormData({ name: "", email: "", message: "" });
+      setTimeout(() => setStatus("idle"), 5000);
+    } catch (error) {
+      console.error("Firebase Error:", error);
+      setStatus("idle");
+      alert("An error occurred while sending your message. Please try again.");
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#020202] text-zinc-100 font-sans">
-      <nav className="p-6">
-        <Link href="/" className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-white transition">
-          <ArrowLeft size={14} /> Back to Studio
-        </Link>
+    <div className="min-h-screen bg-[#020202] text-white selection:bg-indigo-500/30 font-sans">
+      {/* NAVIGATION */}
+      <nav className="border-b border-white/5 bg-black/20 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="bg-indigo-600 p-1.5 rounded-lg group-hover:rotate-12 transition-transform">
+              <Sparkles size={18} fill="currentColor" />
+            </div>
+            <span className="font-black text-xl tracking-tighter uppercase italic">
+              Imagynex<span className="text-indigo-500 not-italic"> AI</span>
+            </span>
+          </Link>
+          <Link href="/" className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white transition">
+            <ArrowLeft size={14} /> Back to Studio
+          </Link>
+        </div>
       </nav>
 
-      <main className="max-w-xl mx-auto px-6 py-12">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-black tracking-tighter uppercase italic mb-3">Get in <span className="text-indigo-500">Touch</span></h1>
-          <p className="text-zinc-500 text-sm font-medium">Have questions about the Imagynex Neural Engine?</p>
-        </div>
-
-        <div className="bg-zinc-900/40 border border-white/5 p-8 rounded-[40px] backdrop-blur-3xl shadow-2xl">
-          {status === 'sent' ? (
-            <div className="py-12 text-center animate-in zoom-in-95 duration-500">
-              <div className="w-16 h-16 bg-indigo-500/10 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                <CheckCircle2 size={32} />
-              </div>
-              <h2 className="text-xl font-black uppercase tracking-tight mb-2">Message Received</h2>
-              <p className="text-zinc-500 text-sm">Our neural processors are analyzing your inquiry.</p>
-              <button onClick={() => setStatus('idle')} className="mt-8 text-[10px] font-black uppercase tracking-widest text-indigo-400 hover:text-white transition">Send Another</button>
+      <main className="max-w-7xl mx-auto px-6 py-20">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-20">
+          
+          {/* LEFT SIDE: BRANDING & INFO */}
+          <div className="space-y-8">
+            <div className="inline-block px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-black uppercase tracking-[0.3em] text-indigo-400">
+              Support Center
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Name</label>
-                <input required type="text" className="w-full bg-black/60 border border-white/5 rounded-2xl p-4 text-sm outline-none focus:border-indigo-600/50 transition" placeholder="Your Name" />
+            <h1 className="text-5xl md:text-7xl font-black tracking-tighter italic uppercase leading-[0.9]">
+              Connect With <br /><span className="text-indigo-500">Our Team.</span>
+            </h1>
+            <p className="text-zinc-500 text-lg max-w-md font-medium leading-relaxed">
+              Have a question about our neural models or a suggestion to improve our engine? We are here to listen.
+            </p>
+            
+            <div className="space-y-6 pt-10">
+              <div className="flex items-center gap-4 group">
+                <div className="bg-white/5 p-4 rounded-2xl group-hover:bg-indigo-600/20 transition-colors">
+                  <Mail className="text-indigo-500" size={24} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">General Inquiries</p>
+                  <p className="font-bold text-zinc-200">hello@imagynex.ai</p>
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Email Address</label>
-                <input required type="email" className="w-full bg-black/60 border border-white/5 rounded-2xl p-4 text-sm outline-none focus:border-indigo-600/50 transition" placeholder="hello@example.com" />
+              <div className="flex items-center gap-4 group">
+                <div className="bg-white/5 p-4 rounded-2xl group-hover:bg-blue-600/20 transition-colors">
+                  <MessageSquare className="text-blue-500" size={24} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">Community Hub</p>
+                  <p className="font-bold text-zinc-200">Join our Discord Server</p>
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Message</label>
-                <textarea required rows={4} className="w-full bg-black/60 border border-white/5 rounded-2xl p-4 text-sm outline-none focus:border-indigo-600/50 transition resize-none" placeholder="Describe your inquiry..." />
-              </div>
-              <button 
-                type="submit" 
-                disabled={status === 'sending'}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black py-4 rounded-2xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-[10px]"
-              >
-                {status === 'sending' ? 'Transmitting...' : <><Send size={14} /> Send Message</>}
-              </button>
-            </form>
-          )}
-        </div>
-
-        <div className="mt-12 grid grid-cols-2 gap-4">
-          <div className="p-6 bg-white/5 border border-white/5 rounded-[32px] text-center">
-            <Mail size={20} className="mx-auto mb-3 text-indigo-500" />
-            <p className="text-[10px] font-black uppercase text-zinc-500">Email Us</p>
-            <p className="text-xs font-bold mt-1">contact@imagynex.ai</p>
+            </div>
           </div>
-          <div className="p-6 bg-white/5 border border-white/5 rounded-[32px] text-center">
-            <MessageSquare size={20} className="mx-auto mb-3 text-blue-500" />
-            <p className="text-[10px] font-black uppercase text-zinc-500">Support</p>
-            <p className="text-xs font-bold mt-1">Discord Community</p>
+
+          {/* RIGHT SIDE: CONTACT FORM */}
+          <div className="bg-zinc-900/30 border border-white/5 p-8 md:p-12 rounded-[40px] backdrop-blur-3xl shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-600/10 blur-[50px] rounded-full" />
+            
+            {status === "success" ? (
+              <div className="h-full flex flex-col items-center justify-center text-center space-y-6 py-20 animate-in fade-in zoom-in duration-500">
+                <div className="bg-green-500/20 p-6 rounded-full">
+                  <CheckCircle2 size={60} className="text-green-500 animate-pulse" />
+                </div>
+                <div className="space-y-2">
+                  <h2 className="text-3xl font-black uppercase tracking-tighter">Transmission Received</h2>
+                  <p className="text-zinc-500 text-sm font-medium">Thank you for reaching out. Our team will review your message and respond shortly.</p>
+                </div>
+                <button onClick={() => setStatus("idle")} className="text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-white transition">
+                  Send Another Inquiry
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-600 ml-2">Full Name</label>
+                  <input 
+                    required 
+                    type="text" 
+                    value={formData.name} 
+                    onChange={(e)=>setFormData({...formData, name: e.target.value})} 
+                    className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 outline-none focus:border-indigo-500 transition text-sm font-medium placeholder:text-zinc-700" 
+                    placeholder="Enter your name" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-600 ml-2">Email Address</label>
+                  <input 
+                    required 
+                    type="email" 
+                    value={formData.email} 
+                    onChange={(e)=>setFormData({...formData, email: e.target.value})} 
+                    className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 outline-none focus:border-indigo-500 transition text-sm font-medium placeholder:text-zinc-700" 
+                    placeholder="name@example.com" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-600 ml-2">Message</label>
+                  <textarea 
+                    required 
+                    rows={4} 
+                    value={formData.message} 
+                    onChange={(e)=>setFormData({...formData, message: e.target.value})} 
+                    className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 outline-none focus:border-indigo-500 transition resize-none text-sm font-medium placeholder:text-zinc-700" 
+                    placeholder="How can we help you?" 
+                  />
+                </div>
+                
+                <button 
+                  disabled={status === "loading"} 
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 text-white font-black py-5 rounded-2xl transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] text-xs shadow-xl shadow-indigo-600/20 active:scale-[0.98]"
+                >
+                  {status === "loading" ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+                  {status === "loading" ? "Transmitting..." : "Send Message"}
+                </button>
+              </form>
+            )}
           </div>
         </div>
       </main>
+
+      <footer className="py-12 text-center opacity-30">
+        <p className="text-[10px] font-black uppercase tracking-[0.5em]">Imagynex AI &copy; 2024 • Neural Creative Engine</p>
+      </footer>
     </div>
   );
 }
