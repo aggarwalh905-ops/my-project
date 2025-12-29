@@ -464,106 +464,217 @@ export default function AIStudio() {
   // --- SEARCH FOR generateImage FUNCTION IN YOUR CODE AND UPDATE IT ---
 
   const generateImage = async (overrideSeed?: number) => {
+
     if (!prompt) return;
+
     setLoading(true);
+
     setSaveStatus(null);
+
     setError(null);
 
-    // 1. User & Seed Logic (Wahi purana)
-    let storedUid = localStorage.getItem('imagynex_uid') || 'u_' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('imagynex_uid', storedUid);
+
+
+    // 1. Get UID and Fetch Profile Name
+
+    let storedUid = localStorage.getItem('imagynex_uid');
+
+    if (!storedUid) {
+
+      storedUid = 'u_' + Math.random().toString(36).substr(2, 9);
+
+      localStorage.setItem('imagynex_uid', storedUid);
+
+    }
+
+
+
+    // Gallery se sync karne ke liye current displayName nikalna
 
     let currentDisplayName = "Artist";
-    try {
-      const userDoc = await getDoc(doc(db, "users", storedUid));
-      if (userDoc.exists()) currentDisplayName = userDoc.data().displayName;
-    } catch (err) { console.error(err); }
 
-    const finalSeed = overrideSeed !== undefined ? overrideSeed : (seed !== "" ? Number(seed) : Math.floor(Math.random() * 1000000));
-    if (overrideSeed !== undefined || seed === "") setSeed(finalSeed);
+    try {
+
+      const userDoc = await getDoc(doc(db, "users", storedUid));
+
+      if (userDoc.exists()) {
+
+        currentDisplayName = userDoc.data().displayName;
+
+      }
+
+    } catch (err) {
+
+      console.error("User fetch error:", err);
+
+    }
+
+
+
+    const finalSeed = overrideSeed !== undefined
+
+      ? overrideSeed
+
+      : (seed !== "" ? Number(seed) : Math.floor(Math.random() * 1000000));
+
+
+
+    if (overrideSeed !== undefined || seed === "") {
+
+      setSeed(finalSeed);
+
+    }
+
+
+
+    let w = 1024, h = 1024;
+
+    if (ratio === "16:9") { w = 1280; h = 720; }
+
+    if (ratio === "9:16") { w = 720; h = 1280; }
+
+
 
     const styleSuffix = styles.find(s => s.name === selectedStyle)?.suffix || "";
-    const fullPrompt = `${prompt}${styleSuffix}`;
+
     const negPart = negativePrompt ? `&negative=${encodeURIComponent(negativePrompt)}` : "";
 
-    // --- REUSABLE SAVE FUNCTION (Jo dono ke liye kaam karega) ---
-    const handleFinalImage = async (finalUrl: string, usedModel: string) => {
-      setImage(finalUrl);
-      
-      const newEntry = { 
-        url: finalUrl, 
-        prompt: fullPrompt, 
-        seed: finalSeed, 
-        ratio, 
-        model: usedModel, 
-        timestamp: Date.now(), 
-        firestoreId: null 
+    const fullPrompt = `${prompt}${styleSuffix}`;
+
+   
+
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=${w}&height=${h}&model=${model}&seed=${finalSeed}&nologo=true${negPart}`;
+
+   
+
+    const img = new Image();
+
+    img.src = url;
+
+   
+
+    img.onload = async () => {
+
+      setImage(url);
+
+      setLoading(false);
+
+     
+
+      const newEntry = {
+
+        url,
+
+        prompt: fullPrompt,
+
+        seed: finalSeed,
+
+        ratio,
+
+        model,
+
+        timestamp: Date.now(),
+
+        firestoreId: null
+
       };
 
+     
+
       try {
-        // Gallery mein Save karein
+
+        // --- UPDATED FIREBASE SAVE LOGIC ---
+
+       
+
+        // A. Gallery mein image add karna (With creatorName)
+
         const docRef = await addDoc(collection(db, "gallery"), {
-          imageUrl: finalUrl,
+
+          imageUrl: url,
+
           prompt: fullPrompt,
+
           style: selectedStyle,
+
           seed: finalSeed,
-          ratio,
-          model: usedModel,
+
+          ratio: ratio,
+
+          model: model,
+
           createdAt: serverTimestamp(),
+
           creatorId: storedUid,
-          creatorName: currentDisplayName,
+
+          creatorName: currentDisplayName, // <-- Yeh Gallery mein dikhega
+
           likesCount: 0,
+
           likedBy: []
+
         });
 
-        // Total Creations update karein
-        await setDoc(doc(db, "users", storedUid), {
+
+
+        // B. User profile mein Total Creations ko increment karna (SAFELY)
+
+        const userRef = doc(db, "users", storedUid);
+
+        await setDoc(userRef, {
+
           totalCreations: increment(1),
-          displayName: currentDisplayName 
-        }, { merge: true });
 
-        // History update karein
+          // Agar user naya hai toh ye default fields bhi ban jayenge
+
+          displayName: currentDisplayName
+
+        }, { merge: true }); // merge: true se purana data delete nahi hoga
+
+
+
         const entryWithId = { ...newEntry, firestoreId: docRef.id };
+
         const updatedHistory = [entryWithId, ...history].slice(0, 15);
+
         setHistory(updatedHistory);
+
         localStorage.setItem('imagynex_history', JSON.stringify(updatedHistory));
+
         setSaveStatus('cloud');
+
       } catch (e) {
-        console.error("Save Error:", e);
+
+        console.error("Firebase Save Error:", e);
+
+        const updatedHistory = [newEntry, ...history].slice(0, 15);
+
+        setHistory(updatedHistory);
+
+        localStorage.setItem('imagynex_history', JSON.stringify(updatedHistory));
+
         setSaveStatus('local');
+
       }
+
+    };
+
+
+
+    img.onerror = () => {
+
       setLoading(false);
+
+      setError({
+
+        message: "The engine is currently overloaded. Please try again or switch to 'TURBO' model.",
+
+        type: "server_busy"
+
+      });
+
     };
 
-    // --- MAIN LOGIC ---
-    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1024&height=1024&model=${model}&seed=${finalSeed}&nologo=true${negPart}`;
-    
-    const img = new Image();
-    img.src = pollinationsUrl;
-
-    img.onload = () => {
-      // Agar Pollinations chal gaya
-      handleFinalImage(pollinationsUrl, model);
-    };
-
-    img.onerror = async () => {
-      console.warn("Pollinations down. Switching to Puter...");
-      try {
-        // @ts-ignore
-        const result = await puter.ai.txt2img(fullPrompt, "flux-1-schnell");
-        
-        // Puter result.src ek base64 ya blob url ho sakta hai
-        const puterUrl = result.src; 
-
-        // Puter ki image ko handle karein (Ye bhi database mein save hogi)
-        handleFinalImage(puterUrl, "flux-puter");
-        
-      } catch (error) {
-        console.error("Puter Error:", error);
-        setLoading(false);
-        setError({ message: "All servers are busy, Please try later.", type: "server_busy" });
-      }
-    };
   };
 
   return (
@@ -793,12 +904,6 @@ export default function AIStudio() {
                       </option>
                       <option value="turbo" className="bg-zinc-900 text-white">
                         TURBO (Lightning Fast Execution)
-                      </option>
-                      <option value="nanobanana" className="bg-zinc-900 text-white">
-                        NANOBANANA (High-Speed Artistic Mix)
-                      </option>
-                      <option value="zimage" className="bg-zinc-900 text-white">
-                        ZIMAGE (Balanced Efficiency & Quality)
                       </option>
                     </select>
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600 group-hover:text-white transition-colors">
