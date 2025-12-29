@@ -5,11 +5,12 @@ import {
   Download, Sparkles, Loader2, Image as ImageIcon, 
   Zap, Maximize, MessageSquareText, RefreshCw,
   MousePointer2, LayoutGrid, Menu, X, Share2,Wand2, Hash,
-  History, Sliders, Ban, Copy, Check, Trash2, ChevronDown
+  History, Sliders, AlertCircle, Ban, Copy, Check, Trash2, ChevronDown
 } from 'lucide-react';
 
 import { 
-  updateDoc, 
+  updateDoc,
+  getDoc, 
   setDoc, 
   increment, 
 } from "firebase/firestore";
@@ -82,7 +83,17 @@ export default function AIStudio() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
-  const [negativePrompt, setNegativePrompt] = useState("blurry, low quality, low-resolution, distorted, out of frame, ugly, bad anatomy");
+  const [negativePrompt, setNegativePrompt] = useState("");
+
+  const [error, setError] = useState<{message: string, type: string} | null>(null);
+
+  // Error auto-hide karne ke liye useEffect
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 8000); // 8 seconds baad gayab ho jayega
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   useEffect(() => {
     const hasSeenv2 = localStorage.getItem('imagynex_v2_init');
@@ -455,90 +466,134 @@ export default function AIStudio() {
   const generateImage = async (overrideSeed?: number) => {
     if (!prompt) return;
     setLoading(true);
-    setSaveStatus(null); 
-    
-    // Check if user has a unique ID in localStorage, if not create one
-    let storedUid = localStorage.getItem('imagynex_uid');
-    if (!storedUid) {
-      storedUid = 'user_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('imagynex_uid', storedUid);
-    }
+    setSaveStatus(null);
+    setError(null);
 
-    const finalSeed = overrideSeed !== undefined 
-      ? overrideSeed 
-      : (seed !== "" ? Number(seed) : Math.floor(Math.random() * 1000000));
+    // 1. User & Seed Logic (Wahi purana)
+    let storedUid = localStorage.getItem('imagynex_uid') || 'u_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('imagynex_uid', storedUid);
 
-    if (overrideSeed !== undefined || seed === "") {
-      setSeed(finalSeed);
-    }
+    let currentDisplayName = "Artist";
+    try {
+      const userDoc = await getDoc(doc(db, "users", storedUid));
+      if (userDoc.exists()) currentDisplayName = userDoc.data().displayName;
+    } catch (err) { console.error(err); }
 
-    let w = 1024, h = 1024;
-    if (ratio === "16:9") { w = 1280; h = 720; }
-    if (ratio === "9:16") { w = 720; h = 1280; }
+    const finalSeed = overrideSeed !== undefined ? overrideSeed : (seed !== "" ? Number(seed) : Math.floor(Math.random() * 1000000));
+    if (overrideSeed !== undefined || seed === "") setSeed(finalSeed);
 
     const styleSuffix = styles.find(s => s.name === selectedStyle)?.suffix || "";
-    const negPart = negativePrompt ? `&negative=${encodeURIComponent(negativePrompt)}` : "";
     const fullPrompt = `${prompt}${styleSuffix}`;
-    
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=${w}&height=${h}&model=${model}&seed=${finalSeed}&nologo=true${negPart}`;
-    
-    const img = new Image();
-    img.src = url;
-    
-    img.onload = async () => {
-      setImage(url);
-      setLoading(false);
+    const negPart = negativePrompt ? `&negative=${encodeURIComponent(negativePrompt)}` : "";
+
+    // --- REUSABLE SAVE FUNCTION (Jo dono ke liye kaam karega) ---
+    const handleFinalImage = async (finalUrl: string, usedModel: string) => {
+      setImage(finalUrl);
       
       const newEntry = { 
-        url, 
+        url: finalUrl, 
         prompt: fullPrompt, 
-        negativePrompt,
         seed: finalSeed, 
-        ratio,
-        model,
+        ratio, 
+        model: usedModel, 
         timestamp: Date.now(), 
         firestoreId: null 
       };
-      
+
       try {
-        // --- UPDATED FIREBASE SAVE LOGIC ---
+        // Gallery mein Save karein
         const docRef = await addDoc(collection(db, "gallery"), {
-          imageUrl: url,
+          imageUrl: finalUrl,
           prompt: fullPrompt,
-          negativePrompt: negativePrompt,
           style: selectedStyle,
           seed: finalSeed,
-          ratio: ratio,
-          model: model,
+          ratio,
+          model: usedModel,
           createdAt: serverTimestamp(),
-          // NEW SOCIAL FIELDS ADDED HERE:
           creatorId: storedUid,
+          creatorName: currentDisplayName,
           likesCount: 0,
           likedBy: []
         });
 
+        // Total Creations update karein
+        await setDoc(doc(db, "users", storedUid), {
+          totalCreations: increment(1),
+          displayName: currentDisplayName 
+        }, { merge: true });
+
+        // History update karein
         const entryWithId = { ...newEntry, firestoreId: docRef.id };
         const updatedHistory = [entryWithId, ...history].slice(0, 15);
         setHistory(updatedHistory);
         localStorage.setItem('imagynex_history', JSON.stringify(updatedHistory));
         setSaveStatus('cloud');
       } catch (e) {
-        console.error("Firebase Save Error:", e);
-        const updatedHistory = [newEntry, ...history].slice(0, 15);
-        setHistory(updatedHistory);
-        localStorage.setItem('imagynex_history', JSON.stringify(updatedHistory));
+        console.error("Save Error:", e);
         setSaveStatus('local');
       }
+      setLoading(false);
     };
 
-    img.onerror = () => {
-      setLoading(false);
-      alert("Neural engine response failed. Please try again.");
+    // --- MAIN LOGIC ---
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1024&height=1024&model=${model}&seed=${finalSeed}&nologo=true${negPart}`;
+    
+    const img = new Image();
+    img.src = pollinationsUrl;
+
+    img.onload = () => {
+      // Agar Pollinations chal gaya
+      handleFinalImage(pollinationsUrl, model);
+    };
+
+    img.onerror = async () => {
+      console.warn("Pollinations down. Switching to Puter...");
+      try {
+        // @ts-ignore
+        const result = await puter.ai.txt2img(fullPrompt, "flux-1-schnell");
+        
+        // Puter result.src ek base64 ya blob url ho sakta hai
+        const puterUrl = result.src; 
+
+        // Puter ki image ko handle karein (Ye bhi database mein save hogi)
+        handleFinalImage(puterUrl, "flux-puter");
+        
+      } catch (error) {
+        console.error("Puter Error:", error);
+        setLoading(false);
+        setError({ message: "All servers are busy, Please try later.", type: "server_busy" });
+      }
     };
   };
 
   return (
     <div className="min-h-screen bg-[#020202] text-zinc-100 font-sans selection:bg-indigo-600/50">
+      {/* Error Toast Notification */}
+      {error && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-md animate-in fade-in slide-in-from-top-8 duration-500">
+          <div className="bg-zinc-900/90 backdrop-blur-2xl border border-red-500/20 p-4 rounded-2xl shadow-[0_20px_40px_rgba(0,0,0,0.5)] flex items-start gap-4">
+            <div className="bg-red-500/10 p-2 rounded-full text-red-500 shrink-0">
+              <AlertCircle size={20} />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-1">
+                System Congestion
+              </h3>
+              <p className="text-sm text-zinc-300 leading-relaxed">
+                {error.message}
+              </p>
+              <div className="mt-3">
+                <button 
+                  onClick={() => setError(null)}
+                  className="text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-white transition cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
         <div className="absolute top-[-20%] left-[-10%] w-[70%] h-[70%] bg-indigo-600/10 blur-[150px] rounded-full animate-pulse" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 blur-[150px] rounded-full" />
@@ -733,10 +788,18 @@ export default function AIStudio() {
                       onChange={(e) => setModel(e.target.value)} 
                       className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm outline-none focus:border-indigo-500/50 text-white appearance-none cursor-pointer transition-all hover:bg-black/60"
                     >
-                      <option value="flux" className="bg-zinc-900 text-white">FLUX.1 (Ultra Detail)</option>
-                      <option value="turbo" className="bg-zinc-900 text-white">TURBO (Lightning Fast)</option>
-                      <option value="nanobanana" className="bg-zinc-900 text-white">NANOBANANA (Fast)</option>
-                      <option value="zimage" className="bg-zinc-900 text-white">ZIMAGE</option>
+                      <option value="flux" className="bg-zinc-900 text-white">
+                        FLUX.1 (Ultra Detail & Realism)
+                      </option>
+                      <option value="turbo" className="bg-zinc-900 text-white">
+                        TURBO (Lightning Fast Execution)
+                      </option>
+                      <option value="nanobanana" className="bg-zinc-900 text-white">
+                        NANOBANANA (High-Speed Artistic Mix)
+                      </option>
+                      <option value="zimage" className="bg-zinc-900 text-white">
+                        ZIMAGE (Balanced Efficiency & Quality)
+                      </option>
                     </select>
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600 group-hover:text-white transition-colors">
                       <ChevronDown size={14} />

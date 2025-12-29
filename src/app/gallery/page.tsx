@@ -4,13 +4,13 @@ import { db } from "@/lib/firebase";
 import { 
   collection, query, orderBy, onSnapshot, limit, where,
   startAfter, getDocs, doc, setDoc, updateDoc, increment, 
-  arrayUnion, arrayRemove 
+  arrayUnion, arrayRemove, getCountFromServer, getDoc
 } from "firebase/firestore";
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
-  Download, Search, Sparkles, Share2, 
-  User, Heart, Trophy, Edit3, Check, Zap, Eye, Flame, Crown, Medal, TrendingUp
+  Download, Search, Sparkles, Share2, ArrowLeft,
+  User, Heart, Trophy, Edit3, Check, Zap, Eye, Flame, Crown, Medal, TrendingUp, Gift, Info, Star, ShieldCheck, BadgeCheck
 } from 'lucide-react';
 
 interface GalleryImage {
@@ -28,7 +28,11 @@ interface ArtistProfile {
   displayName: string;
   totalCreations: number;
   totalLikes: number;
+  weeklyLikes: number; 
   likedImages: string[];
+  lastReset?: any;
+  isSeasonWinner?: boolean;
+  isSecondPlace?: boolean;
 }
 
 function GalleryContent() {
@@ -49,22 +53,75 @@ function GalleryContent() {
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState("");
   const [leaderboard, setLeaderboard] = useState<ArtistProfile[]>([]);
+  const [globalLeaderboard, setGlobalLeaderboard] = useState<ArtistProfile[]>([]);
+  const [myRank, setMyRank] = useState<number | string>("...");
+  const [myGlobalRank, setMyGlobalRank] = useState<number | string>("...");
   const [timeLeft, setTimeLeft] = useState("");
 
+  const now = new Date();
+  const day = now.getDay();
+  const isMonday = day === 1;
+  const isTuesday = day === 2;
+  const isSunday = day === 0;
+
   const categories = ["All", "Trending", "Cinematic", "Anime", "Cyberpunk", "3D Render"];
+
+  const fetchRanks = async (weekly: number, total: number) => {
+    try {
+      const qSeason = query(collection(db, "users"), where("weeklyLikes", ">", weekly));
+      const qGlobal = query(collection(db, "users"), where("totalLikes", ">", total));
+      const [snapSeason, snapGlobal] = await Promise.all([
+        getCountFromServer(qSeason),
+        getCountFromServer(qGlobal)
+      ]);
+      setMyRank(snapSeason.data().count + 1);
+      setMyGlobalRank(snapGlobal.data().count + 1);
+    } catch (e) {
+      console.error("Rank fetch error:", e);
+    }
+  };
+
+  const checkAndResetSeason = async (uid: string, currentWeeklyLikes: number) => {
+    const userRef = doc(db, "users", uid);
+    const userSnap = await getDoc(userRef);
+    
+    if (userSnap.exists()) {
+      const userData = userSnap.data();
+      const lastReset = userData.lastReset?.toDate() || new Date(0);
+      const today = new Date();
+      
+      if (isSunday && today.toDateString() !== lastReset.toDateString()) {
+        const isTopOne = leaderboard[0]?.id === uid && currentWeeklyLikes > 0;
+        const isTopTwo = leaderboard[1]?.id === uid && currentWeeklyLikes > 0;
+        
+        await updateDoc(userRef, {
+          weeklyLikes: 0,
+          lastReset: today,
+          isSeasonWinner: isTopOne,
+          isSecondPlace: isTopTwo
+        });
+      }
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
     const timer = setInterval(() => {
-      const now = new Date();
+      const today = new Date();
       const nextSun = new Date();
-      nextSun.setDate(now.getDate() + (7 - now.getDay()));
-      nextSun.setHours(23, 59, 59);
-      const diff = nextSun.getTime() - now.getTime();
+      nextSun.setDate(today.getDate() + (today.getDay() === 0 ? 7 : 7 - today.getDay()));
+      nextSun.setHours(0, 0, 0, 0); 
+      
+      const diff = nextSun.getTime() - today.getTime();
       const d = Math.floor(diff / 86400000);
       const h = Math.floor((diff / 3600000) % 24);
       const m = Math.floor((diff / 60000) % 60);
-      setTimeLeft(`${d}d ${h}h ${m}m`);
+      
+      if (diff <= 0) {
+        setTimeLeft("RESETTING...");
+      } else {
+        setTimeLeft(`ENDS IN: ${d}d ${h}h ${m}m`);
+      }
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -77,24 +134,36 @@ function GalleryContent() {
 
     const unsubUser = onSnapshot(doc(db, "users", uid), (snap) => {
       if (snap.exists()) {
-        setProfile({ ...snap.data(), id: uid } as ArtistProfile);
-        setNewName(snap.data().displayName);
+        const data = snap.data() as ArtistProfile;
+        setProfile({ ...data, id: uid });
+        setNewName(data.displayName);
+        fetchRanks(data.weeklyLikes, data.totalLikes);
+        if (isSunday) checkAndResetSeason(uid, data.weeklyLikes);
       } else {
         setDoc(doc(db, "users", uid), { 
           displayName: `Creator_${uid.slice(0, 4)}`, 
           totalLikes: 0, 
-          totalCreations: 0, 
-          likedImages: [] 
-        });
+          weeklyLikes: 0,
+          totalCreations: 0,
+          likedImages: [],
+          lastReset: new Date(),
+          isSeasonWinner: false,
+          isSecondPlace: false
+        }, { merge: true });
       }
     });
 
-    const qLeader = query(collection(db, "users"), orderBy("totalLikes", "desc"), limit(3));
+    const qLeader = query(collection(db, "users"), orderBy("weeklyLikes", "desc"), limit(3));
     const unsubLeader = onSnapshot(qLeader, (snap) => {
       setLeaderboard(snap.docs.map(d => ({ id: d.id, ...d.data() } as ArtistProfile)));
     });
 
-    return () => { unsubUser(); unsubLeader(); };
+    const qGlobalLeader = query(collection(db, "users"), orderBy("totalLikes", "desc"), limit(3));
+    const unsubGlobalLeader = onSnapshot(qGlobalLeader, (snap) => {
+      setGlobalLeaderboard(snap.docs.map(d => ({ id: d.id, ...d.data() } as ArtistProfile)));
+    });
+
+    return () => { unsubUser(); unsubLeader(); unsubGlobalLeader(); };
   }, [mounted]);
 
   const observer = useRef<IntersectionObserver | null>(null);
@@ -113,19 +182,30 @@ function GalleryContent() {
     if (!mounted) return;
     setLoading(true);
 
-    let constraints: any[] = [];
-    if (activeFilter === "Trending") constraints.push(orderBy("likesCount", "desc"));
-    else constraints.push(orderBy("createdAt", "desc"));
+    const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    const artistIdFromUrl = searchParams.get('user');
 
-    if (showMyCreations) {
+    let constraints: any[] = [];
+    
+    if (activeFilter === "Trending") {
+      constraints.push(orderBy("likesCount", "desc"));
+    } else {
+      constraints.push(orderBy("createdAt", "desc"));
+    }
+
+    if (artistIdFromUrl) {
+      constraints.push(where("creatorId", "==", artistIdFromUrl));
+    } else if (showMyCreations) {
       constraints.push(where("creatorId", "==", userId));
     } else if (activeFilter !== "All" && activeFilter !== "Trending") {
       constraints.push(where("style", "==", activeFilter));
     }
 
     const q = query(collection(db, "gallery"), ...constraints, limit(12));
+    
     const unsub = onSnapshot(q, (snap) => {
       let fetchedImages = snap.docs.map(d => ({ id: d.id, ...d.data() } as GalleryImage));
+      
       if (searchQuery.trim() !== "") {
         fetchedImages = fetchedImages.filter(img => img.prompt.toLowerCase().includes(searchQuery.toLowerCase()));
         setHasMore(false);
@@ -136,16 +216,23 @@ function GalleryContent() {
       setImages(fetchedImages);
       setLoading(false);
     });
+
     return () => unsub();
   }, [mounted, activeFilter, showMyCreations, userId, searchQuery]);
 
   const loadMore = async () => {
     if (!lastDoc || loadingMore) return;
     setLoadingMore(true);
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const artistIdFromUrl = searchParams.get('user');
+
     let constraints: any[] = [];
     if (activeFilter === "Trending") constraints.push(orderBy("likesCount", "desc"));
     else constraints.push(orderBy("createdAt", "desc"));
-    if (showMyCreations) constraints.push(where("creatorId", "==", userId));
+    
+    if (artistIdFromUrl) constraints.push(where("creatorId", "==", artistIdFromUrl));
+    else if (showMyCreations) constraints.push(where("creatorId", "==", userId));
 
     const nextQ = query(collection(db, "gallery"), ...constraints, startAfter(lastDoc), limit(12));
     const snap = await getDocs(nextQ);
@@ -167,7 +254,10 @@ function GalleryContent() {
     await updateDoc(doc(db, "users", userId), { likedImages: isLiked ? arrayRemove(img.id) : arrayUnion(img.id) });
     await updateDoc(doc(db, "gallery", img.id), { likesCount: increment(isLiked ? -1 : 1) });
     if (img.creatorId) {
-      await updateDoc(doc(db, "users", img.creatorId), { totalLikes: increment(isLiked ? -1 : 1) });
+      await updateDoc(doc(db, "users", img.creatorId), { 
+        totalLikes: increment(isLiked ? -1 : 1),
+        weeklyLikes: increment(isLiked ? -1 : 1) 
+      });
     }
   };
 
@@ -181,14 +271,18 @@ function GalleryContent() {
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
     ctx.drawImage(bitmap, 0, 0);
-    const isWinner = leaderboard[0]?.id === userId;
+
     const isOwn = img.creatorId === userId;
-    if (!(isWinner && isOwn)) {
+    const is1stEligible = (isMonday || isTuesday) && profile?.isSeasonWinner && isOwn;
+    const is2ndEligible = isMonday && profile?.isSecondPlace && isOwn;
+
+    if (!is1stEligible && !is2ndEligible) {
       ctx.font = `bold ${canvas.width * 0.04}px sans-serif`;
       ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
       ctx.textAlign = "center";
       ctx.fillText("Imagynex.AI", canvas.width / 2, canvas.height - 40);
     }
+
     const link = document.createElement("a");
     link.download = `Imagynex-${img.id}.png`;
     link.href = canvas.toDataURL();
@@ -198,182 +292,274 @@ function GalleryContent() {
   if (!mounted) return <div className="min-h-screen bg-black" />;
 
   return (
-    <div className="min-h-screen bg-[#020202] text-white selection:bg-indigo-500/30 font-sans selection:text-white">
-      <header className="border-b border-white/5 bg-black/40 backdrop-blur-3xl sticky top-0 z-50 p-4">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="bg-gradient-to-tr from-indigo-600 to-violet-500 p-2.5 rounded-xl shadow-lg shadow-indigo-600/20 group-hover:rotate-12 transition-transform duration-500">
-              <Sparkles size={20} fill="currentColor" />
+    <div className="min-h-screen bg-[#020202] text-white selection:bg-indigo-500/30 font-sans">
+      {/* Mobile Back Header Overlay */}
+      {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('user') && (
+        <div className="max-w-7xl mx-auto px-4 mb-2 pt-4">
+          <div className="bg-indigo-600/10 border border-indigo-500/20 p-3 rounded-2xl flex items-center justify-between backdrop-blur-md">
+            <div className="flex items-center gap-3">
+              <button onClick={() => router.back()} className="p-2 bg-indigo-500 rounded-lg shadow-lg">
+                <ArrowLeft size={16} className="text-white" />
+              </button>
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-widest text-indigo-400">Viewing Artist</p>
+                <h2 className="text-[10px] font-bold uppercase tracking-tight text-white">Public Collection</h2>
+              </div>
             </div>
-            <span className="font-black text-2xl tracking-tighter uppercase italic">
-              Imagynex<span className="text-indigo-500 not-italic">.AI</span>
-            </span>
-          </Link>
-          <div className="flex gap-3">
-             <button onClick={() => setShowMyCreations(!showMyCreations)} className={`p-3 rounded-2xl border transition-all duration-300 ${showMyCreations ? 'bg-indigo-600 border-indigo-400 shadow-[0_0_20px_rgba(79,70,229,0.4)]' : 'bg-zinc-900/50 border-white/10 hover:border-white/20'}`}>
-               <Eye size={20} className={showMyCreations ? "text-white" : "text-zinc-400"}/>
-             </button>
-             <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert("Link Copied!"); }} className="p-3 bg-zinc-900/50 rounded-2xl border border-white/10 hover:bg-zinc-800 transition-all">
-               <Share2 size={20} className="text-zinc-400"/>
-             </button>
+            <button onClick={() => { window.location.href = '/gallery'; }} className="px-3 py-1.5 bg-zinc-900 border border-white/5 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all text-white active:scale-95">
+              Exit
+            </button>
+          </div>
+        </div>
+      )}
+
+      <header className="border-b border-white/5 bg-black/40 backdrop-blur-3xl sticky top-0 z-[60] px-4 py-3 md:p-4">
+        <div className="max-w-7xl mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-3">
+             <Link href="/" className="p-2 md:p-2.5 bg-zinc-900/50 rounded-xl border border-white/10 hover:bg-indigo-600 transition-all duration-300 group shadow-lg">
+              <ArrowLeft size={16} className="text-zinc-400 group-hover:text-white" />
+            </Link>
+             <Link href="/" className="flex items-center gap-2 group">
+                <div className="bg-gradient-to-tr from-indigo-600 to-violet-500 p-1.5 md:p-2 rounded-xl shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                  <Sparkles size={16} fill="currentColor" />
+                </div>
+                <span className="font-black text-lg md:text-xl tracking-tighter uppercase italic">
+                  Imagynex<span className="text-indigo-500 not-italic">.AI</span>
+                </span>
+             </Link>
+          </div>
+          
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <Link href="/leaderboard" className="p-2 md:p-2.5 bg-zinc-900/50 rounded-xl border border-white/10 hover:bg-indigo-600 transition-all duration-300 group shadow-lg">
+              <Trophy size={16} className="text-zinc-400 group-hover:text-white" />
+            </Link>
+            <button onClick={() => setShowMyCreations(!showMyCreations)} className={`p-2 md:p-2.5 rounded-xl border transition-all duration-300 shadow-lg ${showMyCreations ? 'bg-indigo-600 border-indigo-400' : 'bg-zinc-900/50 border-white/10'}`}>
+              <Eye size={16} className={showMyCreations ? "text-white" : "text-zinc-400"} />
+            </button>
+            <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert("Link Copied!"); }} className="p-2 md:p-2.5 bg-zinc-900/50 rounded-xl border border-white/10 transition-all duration-300 shadow-lg group">
+              <Share2 size={16} className="text-zinc-400 group-hover:text-indigo-400" />
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-10">
-        
-        {/* HUD SECTION */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-16">
-          
-          {/* USER CARD */}
-          <div className="lg:col-span-4 bg-zinc-900/20 p-8 rounded-[40px] border border-white/5 relative overflow-hidden group hover:border-indigo-500/30 transition-all duration-500">
-             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-600/10 blur-[80px] -mr-16 -mt-16 group-hover:bg-indigo-600/20 transition-all duration-700"></div>
-             
-             <div className="flex items-center gap-6 relative z-10">
-                <div className="w-20 h-20 bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-700 rounded-3xl flex items-center justify-center shadow-2xl ring-4 ring-black/50">
-                   <User size={38} className="text-white" />
-                </div>
-                <div className="flex-1">
-                   {isEditing ? (
-                     <input value={newName} onChange={e => setNewName(e.target.value)} onBlur={() => { updateDoc(doc(db, "users", userId), {displayName: newName}); setIsEditing(false); }} autoFocus className="bg-zinc-800 border-2 border-indigo-500 rounded-xl px-3 py-2 font-black outline-none text-lg w-full text-indigo-100"/>
-                   ) : (
-                     <h2 onClick={() => setIsEditing(true)} className="text-2xl font-black uppercase italic tracking-tighter cursor-pointer flex items-center gap-2 group/name hover:text-indigo-400 transition-all">
-                       {profile?.displayName} 
-                       <Edit3 size={14} className="opacity-0 group-hover/name:opacity-100 transition-opacity text-indigo-400"/>
-                     </h2>
-                   )}
-                   <div className="flex items-center gap-2 mt-1">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                      <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Active Rank #42</p>
-                   </div>
-                </div>
-             </div>
+      <main className="max-w-7xl mx-auto px-4 py-6 md:py-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8 md:mb-12">
+            {/* GLOBAL RANK PROFILE CARD */}
+            <div className={`lg:col-span-4 bg-zinc-900/20 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border relative overflow-hidden group transition-all duration-500 ${
+                myGlobalRank === 1 ? 'border-yellow-500 shadow-[0_0_40px_-10px_rgba(234,179,8,0.4)]' :
+                myGlobalRank === 2 ? 'border-slate-400 shadow-[0_0_40px_-10px_rgba(148,163,184,0.3)]' :
+                myGlobalRank === 3 ? 'border-orange-600' : 'border-white/5'
+            }`}>
+               <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-600/10 blur-[80px] -mr-16 -mt-16"></div>
+               <div className="flex items-center gap-4 md:gap-6 relative z-10">
+                  <div className={`w-14 h-14 md:w-20 md:h-20 rounded-2xl md:rounded-3xl flex items-center justify-center shadow-2xl transition-transform group-hover:scale-110 duration-500 ${
+                    myGlobalRank === 1 ? 'bg-gradient-to-br from-yellow-400 to-amber-600' : 
+                    myGlobalRank === 2 ? 'bg-gradient-to-br from-slate-300 to-slate-500' : 
+                    myGlobalRank === 3 ? 'bg-gradient-to-br from-orange-400 to-orange-700' : 
+                    'bg-zinc-800'
+                  }`}>
+                     {myGlobalRank === 1 ? <Crown size={28} className="text-black/80" /> : 
+                      myGlobalRank === 2 ? <Medal size={28} className="text-black/80" /> : 
+                      <User size={28} className="text-white" />}
+                  </div>
+                  <div className="flex-1">
+                     {isEditing ? (
+                       <input value={newName} onChange={e => setNewName(e.target.value)} onBlur={() => { updateDoc(doc(db, "users", userId), {displayName: newName}); setIsEditing(false); }} autoFocus className="bg-zinc-800 border-2 border-indigo-500 rounded-xl px-3 py-1 font-black outline-none text-base md:text-lg w-full text-indigo-100"/>
+                     ) : (
+                       <h2 onClick={() => setIsEditing(true)} className="text-lg md:text-2xl font-black uppercase italic tracking-tighter cursor-pointer flex items-center gap-2 hover:text-indigo-400 transition-all">
+                         {profile?.displayName} 
+                         {(myGlobalRank === 1 || myGlobalRank === 2 || myGlobalRank === 3) && <BadgeCheck size={18} className="text-indigo-400 fill-indigo-400/20" />}
+                         <Edit3 size={12} className="text-indigo-400 opacity-40"/>
+                       </h2>
+                     )}
+                     <div className="flex flex-col gap-1 mt-1">
+                         <div className="flex items-center gap-2">
+                           <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${myGlobalRank === 1 ? 'bg-yellow-400' : 'bg-indigo-500'}`}></div>
+                           <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Global Rank #{myGlobalRank}</p>
+                         </div>
+                         <div className="flex items-center gap-2">
+                           <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div>
+                           <p className="text-[9px] font-black text-yellow-500/80 uppercase tracking-widest">Season Rank #{myRank}</p>
+                         </div>
+                     </div>
+                  </div>
+               </div>
 
-             <div className="grid grid-cols-2 gap-4 mt-10 pt-8 border-t border-white/5">
-                <div className="bg-white/5 p-4 rounded-3xl hover:bg-white/[0.08] transition-colors">
-                   <p className="text-2xl font-black text-indigo-400 tracking-tight">{profile?.totalLikes || 0}</p>
-                   <p className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Points</p>
-                </div>
-                <div className="bg-white/5 p-4 rounded-3xl hover:bg-white/[0.08] transition-colors">
-                   <p className="text-2xl font-black text-white tracking-tight">{profile?.totalCreations || 0}</p>
-                   <p className="text-[10px] font-black uppercase text-zinc-500 tracking-wider">Creations</p>
-                </div>
-             </div>
-          </div>
+               <div className="grid grid-cols-3 gap-2 mt-6 md:mt-8 pt-6 border-t border-white/5">
+                  <div className="bg-white/5 p-3 rounded-2xl text-center border border-indigo-500/10">
+                     <p className="text-base md:text-lg font-black text-indigo-400">{profile?.totalLikes || 0}</p>
+                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-500">Total Likes</p>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-2xl text-center border border-yellow-500/10">
+                     <p className="text-base md:text-lg font-black text-yellow-500">{profile?.weeklyLikes || 0}</p>
+                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-500">Season</p>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-2xl text-center">
+                     <p className="text-base md:text-lg font-black text-white">{profile?.totalCreations || 0}</p>
+                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-500">Items</p>
+                  </div>
+               </div>
+            </div>
 
-          {/* LEADERBOARD CARD */}
-          <div className="lg:col-span-8 bg-zinc-900/20 p-8 rounded-[40px] border border-white/5 relative overflow-hidden backdrop-blur-sm">
-             <div className="flex justify-between items-end mb-8">
-                <div>
-                   <h3 className="text-sm font-black uppercase tracking-[0.4em] text-indigo-500/80 mb-1">Global Standings</h3>
-                   <h4 className="text-3xl font-black italic uppercase tracking-tighter">Hall of Fame</h4>
+          <div className="lg:col-span-8 bg-zinc-900/10 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-white/5">
+              <div className="flex items-center gap-2 mb-6">
+                <Info size={16} className="text-indigo-500" />
+                <h4 className="text-xs md:text-sm font-black uppercase tracking-widest italic">Rewards Protocol</h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 md:p-5 bg-white/[0.03] border border-white/5 rounded-2xl md:rounded-3xl group hover:border-yellow-500/30 transition-all">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 bg-yellow-500/20 rounded-lg text-yellow-500"><Crown size={14} /></div>
+                    <p className="text-[10px] font-black uppercase">Champion Prize</p>
+                  </div>
+                  <p className="text-[9px] md:text-[10px] text-zinc-400 leading-relaxed font-bold">1st Place: <span className="text-white">NO WATERMARK</span> for <span className="text-yellow-500">2 Days</span> (Mon-Tue).</p>
                 </div>
-                <div className="flex flex-col items-end">
-                   <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                     <TrendingUp size={12}/> Season Reset
-                   </span>
-                   <div className="bg-indigo-500/10 px-4 py-2 rounded-2xl border border-indigo-500/20 backdrop-blur-md">
-                     <p className="text-xs font-black text-indigo-400 tabular-nums">{timeLeft}</p>
-                   </div>
+                <div className="p-4 md:p-5 bg-white/[0.03] border border-white/5 rounded-2xl md:rounded-3xl group hover:border-slate-400/30 transition-all">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 bg-slate-500/20 rounded-lg text-slate-400"><Medal size={14} /></div>
+                    <p className="text-[10px] font-black uppercase">Elite Prize</p>
+                  </div>
+                  <p className="text-[9px] md:text-[10px] text-zinc-400 leading-relaxed font-bold">2nd Place: <span className="text-white">NO WATERMARK</span> for <span className="text-slate-300">Monday</span>.</p>
                 </div>
-             </div>
-             
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {leaderboard.map((artist, idx) => {
-                  const colors = [
-                    { bg: 'from-yellow-400 to-amber-600', text: 'text-amber-500', border: 'border-yellow-500/40', icon: 'text-yellow-500' },
-                    { bg: 'from-slate-300 to-slate-500', text: 'text-slate-400', border: 'border-slate-500/40', icon: 'text-slate-400' },
-                    { bg: 'from-orange-400 to-orange-700', text: 'text-orange-500', border: 'border-orange-500/40', icon: 'text-orange-600' }
-                  ][idx] || { bg: 'from-zinc-600 to-zinc-800', text: 'text-zinc-500', border: 'border-white/5', icon: 'text-zinc-500' };
-
-                  return (
-                    <div key={artist.id} className={`group relative p-5 rounded-[32px] border transition-all duration-500 hover:-translate-y-1 bg-gradient-to-b from-white/[0.03] to-transparent ${colors.border}`}>
-                       <div className="flex flex-col items-center text-center">
-                          <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${colors.bg} flex items-center justify-center mb-4 shadow-xl ring-4 ring-black/20 group-hover:scale-110 transition-transform`}>
-                             {idx === 0 ? <Crown size={28} className="text-black/80"/> : <span className="text-xl font-black text-black/80">{idx + 1}</span>}
-                          </div>
-                          <p className="text-xs font-black uppercase italic truncate max-w-full mb-1 group-hover:text-indigo-400 transition-colors">{artist.displayName}</p>
-                          <div className="flex items-center gap-1.5 px-3 py-1 bg-black/40 rounded-full border border-white/5">
-                            <Heart size={10} className={`${colors.icon}`} fill="currentColor"/>
-                            <p className="text-[11px] font-bold text-zinc-300 tabular-nums">{artist.totalLikes.toLocaleString()}</p>
-                          </div>
-                       </div>
-                       {idx === 0 && <div className="absolute top-4 right-4 animate-bounce"><Medal size={18} className="text-yellow-500/50"/></div>}
+                <div className="md:col-span-2 p-3.5 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                       <TrendingUp size={14} className="text-indigo-500" />
+                       <p className="text-[9px] font-black uppercase text-zinc-300">Ranks reset every Sunday at midnight.</p>
                     </div>
-                  )
-                })}
-             </div>
+                    <div className="bg-indigo-500/10 px-3 py-1.5 rounded-full border border-indigo-500/20 w-full md:w-auto text-center">
+                       <p className="text-[8px] font-black text-indigo-400 uppercase tracking-tighter">{timeLeft}</p>
+                    </div>
+                </div>
+              </div>
           </div>
         </div>
 
-        {/* SEARCH & FILTERS */}
-        <div className="sticky top-[96px] z-40 bg-[#020202]/80 backdrop-blur-2xl py-6 space-y-5 border-b border-white/5 -mx-4 px-4">
-          <div className="relative group max-w-3xl mx-auto">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-indigo-500 transition-colors" size={20}/>
-            <input 
-              placeholder="Explore the prompt architecture..." value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-900/40 border-2 border-white/5 rounded-[24px] py-5 pl-14 pr-6 text-sm font-bold uppercase tracking-tight outline-none focus:border-indigo-500/40 focus:bg-indigo-500/5 transition-all"
-            />
+        {/* Hall of Fame */}
+        <div className="mb-12">
+            <h4 className="text-lg md:text-xl font-black italic uppercase tracking-tighter mb-6 flex items-center gap-2 px-2">
+              <Star size={18} className="text-yellow-500 fill-yellow-500" /> Hall of Fame
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                 {leaderboard.map((artist, idx) => {
+                   const colors = [
+                     { bg: 'from-yellow-400 to-amber-600', border: 'border-yellow-500/40', icon: 'text-yellow-500' },
+                     { bg: 'from-slate-300 to-slate-500', border: 'border-slate-500/40', icon: 'text-slate-400' },
+                     { bg: 'from-orange-400 to-orange-700', border: 'border-orange-500/40', icon: 'text-orange-600' }
+                   ][idx] || { bg: 'from-zinc-600 to-zinc-800', border: 'border-white/5', icon: 'text-zinc-500' };
+
+                   return (
+                     <div key={artist.id} onClick={() => router.push(`/gallery?user=${artist.id}`)} className={`group relative p-4 rounded-2xl border transition-all duration-500 bg-gradient-to-b from-white/[0.03] to-transparent ${colors.border} cursor-pointer hover:-translate-y-1`}>
+                        <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colors.bg} flex items-center justify-center shadow-xl`}>
+                               {idx === 0 ? <Crown size={20} className="text-black/80"/> : <span className="text-sm font-black text-black/80">{idx + 1}</span>}
+                            </div>
+                            <div className="flex-1">
+                               <p className="text-[10px] font-black uppercase italic truncate flex items-center gap-1">
+                                 {artist.displayName}
+                                 <BadgeCheck size={10} className="text-indigo-400" />
+                               </p>
+                               <div className="flex flex-col gap-0.5 mt-1">
+                                 <div className="flex items-center gap-1.5">
+                                   <Heart size={8} className={`${colors.icon}`} fill="currentColor"/>
+                                   <p className="text-[9px] font-bold text-zinc-400">{artist.weeklyLikes} Season Likes</p>
+                                 </div>
+                                 <p className="text-[7px] font-black text-yellow-500/70 uppercase">Season Rank #{idx + 1}</p>
+                               </div>
+                            </div>
+                        </div>
+                     </div>
+                   )
+                 })}
+            </div>
+        </div>
+
+        {/* Search & Filter Sticky Bar */}
+        <div className="sticky top-[64px] md:top-[88px] z-50 bg-[#020202]/95 backdrop-blur-xl py-4 space-y-4 border-b border-white/5 -mx-4 px-4 shadow-xl">
+          <div className="relative group max-w-2xl mx-auto">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={14}/>
+            <input placeholder="Search Prompts..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-zinc-900/60 border border-white/10 rounded-xl py-3 pl-11 pr-4 text-[10px] font-bold uppercase outline-none focus:border-indigo-500/50 transition-all" />
           </div>
-          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2 justify-center">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 justify-start md:justify-center">
             {categories.map(cat => (
-              <button key={cat} onClick={() => setActiveFilter(cat)} className={`whitespace-nowrap px-8 py-3.5 rounded-2xl text-[10px] font-black uppercase border transition-all duration-300 flex items-center gap-2.5 ${activeFilter === cat ? 'bg-white text-black border-white shadow-[0_10px_30px_rgba(255,255,255,0.2)] scale-105' : 'bg-zinc-900/40 border-white/5 text-zinc-500 hover:text-white hover:border-white/20'}`}>
-                {cat === "Trending" && <Flame size={14} fill={activeFilter === "Trending" ? "black" : "none"}/>} {cat}
+              <button key={cat} onClick={() => setActiveFilter(cat)} className={`whitespace-nowrap px-4 py-2 rounded-lg text-[8px] font-black uppercase border transition-all flex items-center gap-2 ${activeFilter === cat ? 'bg-white text-black border-white' : 'bg-zinc-900/40 border-white/5 text-zinc-500'}`}>
+                {cat === "Trending" && <Flame size={10} fill={activeFilter === "Trending" ? "black" : "none"}/>} {cat}
               </button>
             ))}
           </div>
         </div>
 
-        {/* GRID */}
+        {/* Gallery Grid */}
         {loading && images.length === 0 ? (
-          <div className="py-40 text-center">
-            <div className="relative inline-block">
-               <Zap className="text-indigo-500 animate-pulse relative z-10" size={48}/>
-               <div className="absolute inset-0 bg-indigo-600 blur-3xl opacity-20 animate-pulse"></div>
-            </div>
-            <p className="text-xs font-black uppercase tracking-[0.8em] opacity-30 mt-6 animate-pulse">Calibrating Realities...</p>
+          <div className="py-24 text-center">
+            <Zap className="text-indigo-500 animate-pulse mx-auto mb-4" size={32}/>
+            <p className="text-[9px] font-black uppercase tracking-[0.5em] opacity-30">Generating Flow...</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mt-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mt-6">
             {images.map((img, idx) => {
-              const isWinner = leaderboard[0]?.id === userId;
+              const isGlobalRank1 = globalLeaderboard[0]?.id === img.creatorId;
+              const isGlobalRank2 = globalLeaderboard[1]?.id === img.creatorId;
+              const isGlobalRank3 = globalLeaderboard[2]?.id === img.creatorId;
+              
               const isOwn = img.creatorId === userId;
-              const canDownloadFree = isWinner && isOwn;
+              const is1stEligible = (isMonday || isTuesday) && profile?.isSeasonWinner && isOwn;
+              const is2ndEligible = isMonday && profile?.isSecondPlace && isOwn;
+              const hasPrize = is1stEligible || is2ndEligible;
+
+              // GLOBAL LEVEL FRAMES
+              const frameStyle = isGlobalRank1 
+                ? "border-yellow-500 shadow-[0_0_25px_-5px_rgba(234,179,8,0.4)] ring-1 ring-yellow-500/20" 
+                : isGlobalRank2 
+                ? "border-slate-400 shadow-[0_0_15px_-5px_rgba(148,163,184,0.3)]" 
+                : isGlobalRank3
+                ? "border-orange-600/50"
+                : "border-white/5";
 
               return (
                 <div 
                   key={img.id} 
                   ref={idx === images.length - 1 ? lastImageElementRef : null}
-                  className="group relative w-full aspect-[4/5] bg-zinc-900 rounded-[48px] overflow-hidden border border-white/5 shadow-2xl transition-all duration-700 hover:-translate-y-3 hover:shadow-indigo-500/10 hover:border-white/20"
+                  className={`group relative w-full aspect-[4/5] bg-zinc-900 rounded-[24px] md:rounded-[40px] overflow-hidden border transition-all duration-500 ${frameStyle}`}
                 >
-                  <img src={img.imageUrl} className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-110" loading="lazy" />
+                  {isGlobalRank1 && <div className="absolute inset-0 bg-gradient-to-tr from-yellow-500/5 to-transparent pointer-events-none z-10" />}
                   
-                  <div className="absolute top-7 right-7 z-20">
-                    <button 
-                      onClick={(e) => handleLike(e, img)} 
-                      className={`p-4.5 rounded-[22px] backdrop-blur-3xl border border-white/10 flex items-center gap-2.5 transition-all duration-500 ${profile?.likedImages?.includes(img.id) ? 'bg-red-500 border-red-400 scale-110 shadow-lg shadow-red-500/30' : 'bg-black/60 hover:bg-white hover:text-black hover:border-white'}`}
-                    >
-                      <Heart size={18} fill={profile?.likedImages?.includes(img.id) ? "white" : "none"} />
-                      <span className="text-sm font-black">{img.likesCount || 0}</span>
+                  <img src={img.imageUrl} className="w-full h-full object-cover transition-transform duration-[1s] group-hover:scale-105" loading="lazy" />
+                  
+                  {/* Badges */}
+                  {(isGlobalRank1 || isGlobalRank2 || isGlobalRank3) && (
+                    <div className={`absolute top-4 left-4 z-20 p-1.5 rounded-lg backdrop-blur-md border flex items-center gap-1.5 ${
+                      isGlobalRank1 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-500' : 
+                      isGlobalRank2 ? 'bg-slate-400/20 border-slate-400/40 text-slate-300' : 
+                      'bg-orange-600/20 border-orange-600/40 text-orange-500'
+                    }`}>
+                       {isGlobalRank1 ? <Crown size={12} /> : <ShieldCheck size={12} />}
+                       <span className="text-[7px] font-black uppercase tracking-tighter">
+                         {isGlobalRank1 ? "Global King" : isGlobalRank2 ? "Elite" : "Master"}
+                       </span>
+                    </div>
+                  )}
+
+                  <div className="absolute top-4 right-4 z-20">
+                    <button onClick={(e) => handleLike(e, img)} className={`p-2.5 rounded-xl backdrop-blur-xl border border-white/10 flex items-center gap-2 transition-all ${profile?.likedImages?.includes(img.id) ? 'bg-red-500 border-red-400 text-white' : 'bg-black/60 text-white'}`}>
+                      <Heart size={14} fill={profile?.likedImages?.includes(img.id) ? "white" : "none"} />
+                      <span className="text-[10px] font-black">{img.likesCount || 0}</span>
                     </button>
                   </div>
 
-                  <div className="absolute inset-x-0 bottom-0 p-8 bg-gradient-to-t from-black via-black/95 to-transparent flex flex-col gap-5 translate-y-6 group-hover:translate-y-0 transition-transform duration-500">
-                    <div className="flex gap-3">
-                      <button 
-                        onClick={() => downloadImage(img)} 
-                        className={`flex-1 py-4.5 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2.5 transition-all active:scale-95 ${canDownloadFree ? 'bg-indigo-600 text-white' : 'bg-white text-black'}`}
-                      >
-                        <Download size={18}/> {canDownloadFree ? "Winner Asset" : "Download"}
+                  <div className="absolute inset-x-0 bottom-0 p-4 md:p-6 bg-gradient-to-t from-black via-black/95 to-transparent flex flex-col gap-3 translate-y-4 group-hover:translate-y-0 transition-all">
+                    <div className="flex gap-2">
+                      <button onClick={() => downloadImage(img)} className={`flex-1 py-2.5 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${hasPrize ? 'bg-yellow-500 text-black' : 'bg-white text-black'}`}>
+                        {hasPrize ? <Gift size={14}/> : <Download size={14}/>} 
+                        {hasPrize ? "No Watermark" : "Download"}
                       </button>
-                      <button onClick={() => router.push(`/?prompt=${img.prompt}`)} className="bg-zinc-800/80 p-4 rounded-2xl border border-white/10 hover:bg-indigo-600 hover:border-indigo-400 transition-all">
-                        <Zap size={20} className="fill-white"/>
+                      <button onClick={() => router.push(`/?prompt=${img.prompt}`)} className="bg-zinc-800/80 p-2.5 rounded-lg border border-white/10 hover:bg-indigo-600">
+                        <Zap size={14} className="fill-white"/>
                       </button>
                     </div>
-                    <div className="flex items-center justify-between opacity-40 group-hover:opacity-100 transition-opacity">
-                       <p className="text-[10px] font-bold italic line-clamp-1 truncate w-40 text-zinc-400">"{img.prompt}"</p>
-                       <span className="text-[9px] font-black uppercase bg-white/10 px-2 py-1 rounded-md">{img.style || 'AI'}</span>
+                    <div className="flex items-center justify-between opacity-60">
+                       <p className="text-[8px] font-bold italic line-clamp-1 truncate flex-1 text-zinc-400">"{img.prompt}"</p>
+                       <span className="text-[7px] font-black uppercase bg-white/10 px-1.5 py-0.5 rounded ml-2">{img.style || 'AI'}</span>
                     </div>
                   </div>
                 </div>
@@ -381,14 +567,11 @@ function GalleryContent() {
             })}
           </div>
         )}
-
-        {hasMore && !searchQuery && !showMyCreations && (
-          <div className="flex justify-center mt-24 mb-20">
-             <div className="flex items-center gap-4 bg-zinc-900/30 px-10 py-5 rounded-full border border-white/5 animate-pulse">
-                <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
-                <p className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-400">Streaming Assets</p>
-             </div>
-          </div>
+        
+        {loadingMore && (
+           <div className="py-10 text-center">
+              <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+           </div>
         )}
       </main>
     </div>
@@ -397,7 +580,7 @@ function GalleryContent() {
 
 export default function Gallery() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+    <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><Zap className="text-indigo-500 animate-pulse" /></div>}>
       <GalleryContent />
     </Suspense>
   );
