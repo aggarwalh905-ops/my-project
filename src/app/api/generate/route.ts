@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const negPart = negative ? `&negative_prompt=${encodeURIComponent(negative)}` : "";
     
     // Updated Pollinations URL
-    const pollinationsUrl = `https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${seed}&model=zimage&nologo=true${negPart}`;
+    const pollinationsUrl = `https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${seed}&model=zimage&nologo=true&enhance=true${negPart}`;
 
     const response = await fetch(pollinationsUrl, {
       method: 'GET',

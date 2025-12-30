@@ -515,7 +515,7 @@ export default function AIStudio() {
 
     // 2. Request through your SECURE proxy 
     // ADDED: &negative_prompt parameter
-    const proxyUrl = `/api/generate?prompt=${encodeURIComponent(fullPrompt)}&negative_prompt=${encodeURIComponent(negativePrompt || "")}&width=${w}&height=${h}&model=flux&seed=${finalSeed}&t=${Date.now()}`;
+    const proxyUrl = `/api/generate?prompt=${encodeURIComponent(fullPrompt)}&negative_prompt=${encodeURIComponent(negativePrompt || "")}&width=${w}&height=${h}&model=zimage&seed=${finalSeed}&nologo=true&enhance=true&t=${Date.now()}`;
 
     try {
       const response = await fetch(proxyUrl);
