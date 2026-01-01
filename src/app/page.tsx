@@ -8,6 +8,8 @@ import {
   History, Sliders, ShieldCheck, Info, AlertCircle, Ban, Copy, Check, Trash2, ChevronDown
 } from 'lucide-react';
 
+import { getAuth } from "firebase/auth";
+import { signInAnonymously } from "firebase/auth";
 
 import { 
   updateDoc,
@@ -652,6 +654,12 @@ export default function AIStudio() {
     setSaveStatus(null);
     setError(null);
 
+    // Inside generateImage:
+    const auth = getAuth();
+    if (!auth.currentUser) {
+        await signInAnonymously(auth);
+    }
+
     // 1. Get UID and Fetch Profile Name
     let storedUid = localStorage.getItem('imagynex_uid');
     if (!storedUid) {
@@ -705,7 +713,12 @@ export default function AIStudio() {
 
       const entryId = `img_${Date.now()}`;
 
-      // 1. Prepare history entry (Use 'let' and 'any' or a proper Interface)
+      // --- 1. GET ACCURATE AUTH ID ---
+      // Hum hamesha Firebase Auth ki UID use karenge rule mismatch se bachne ke liye
+      const auth = getAuth();
+      const actualFirebaseUid = auth.currentUser?.uid || storedUid; 
+
+      // 2. Prepare history entry
       let newEntry: any = {
         id: entryId, 
         url: objectURL, 
@@ -718,8 +731,9 @@ export default function AIStudio() {
         isPrivate: !isPublic 
       };
 
-      // 2. --- FIREBASE SAVE ---
+      // 3. --- FIREBASE SAVE ---
       try {
+        // Gallery Doc Create
         const docRef = await addDoc(collection(db, "gallery"), {
           imageUrl: proxyUrl, 
           prompt: fullPrompt,
@@ -728,24 +742,26 @@ export default function AIStudio() {
           ratio: ratio,
           model: "zimage",
           createdAt: serverTimestamp(),
-          creatorId: storedUid,
+          creatorId: actualFirebaseUid, // FIX: Yahan Auth UID ja rahi hai
           creatorName: currentDisplayName,
           likesCount: 0,
           likedBy: [],
           isPrivate: !isPublic 
         });
 
-        const userRef = doc(db, "users", storedUid);
+        // User Profile Update
+        const userRef = doc(db, "users", actualFirebaseUid);
         await setDoc(userRef, {
           totalCreations: increment(1),
-          displayName: currentDisplayName
+          displayName: currentDisplayName,
+          lastActive: serverTimestamp(), // Add this line
+          lastLoginId: storedUid 
         }, { merge: true });
 
         newEntry.firestoreId = docRef.id;
         setSaveStatus(isPublic ? 'cloud' : 'private');
 
-        // 3. --- OFFLINE BACKUP (IndexedDB) ---
-        // Hum sirf private images ko IndexedDB mein rakhte hain local fast load ke liye
+        // 4. --- OFFLINE BACKUP ---
         if (!isPublic) {
           try {
             await saveImageOffline(entryId, blob);
@@ -759,7 +775,7 @@ export default function AIStudio() {
         setSaveStatus('local');
       }
 
-      // 4. Update UI History
+      // 5. Update UI History
       const updatedHistory = [newEntry, ...history].slice(0, 15);
       setHistory(updatedHistory);
       localStorage.setItem('imagynex_history', JSON.stringify(updatedHistory));
@@ -772,7 +788,6 @@ export default function AIStudio() {
       });
     }
   };
-
 
   return (
     <div className="min-h-screen bg-[#020202] text-zinc-100 font-sans selection:bg-indigo-600/50">

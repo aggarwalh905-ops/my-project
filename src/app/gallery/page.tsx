@@ -10,18 +10,22 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
   Download, Search, Sparkles, Share2, ArrowLeft,
-  User, Heart, Trophy, Edit3, Check, Zap, Eye, Flame, Crown, Medal, TrendingUp, Gift, Info, Star, ShieldCheck, BadgeCheck, Lock, Globe
+  User, Heart, Users, LayoutGrid, Trophy, Edit3, Check, Zap, Eye, Flame, Crown, Medal, TrendingUp, Gift, Info, Star, ShieldCheck, BadgeCheck, Lock, Globe
 } from 'lucide-react';
+
+import { deleteDoc } from "firebase/firestore"; // Add this to your firestore imports
+import { Trash2 } from 'lucide-react'; // Add this to your lucide imports
+import { getAuth } from "firebase/auth";
 
 interface GalleryImage {
   id: string;
   imageUrl: string;
   prompt: string;
+  creatorId: string;   // Removed the '?' because an image must have an owner
+  creatorName: string; // Removed the '?' 
+  likesCount: number;  // Removed the '?'
   style?: string;
   createdAt?: any;
-  likesCount?: number;
-  creatorId?: string;
-  creatorName?: string;
   isPrivate?: boolean;
 }
 
@@ -66,7 +70,7 @@ function GalleryContent() {
   const isTuesday = day === 2;
   const isSunday = day === 0;
 
-  const categories = ["All", "Trending", "Cinematic", "Anime", "Cyberpunk", "3D Render"];
+  const categories = ["All", "Trending", "Liked", "Cinematic", "Anime", "Cyberpunk", "3D Render"];
 
   const togglePrivacy = async (e: React.MouseEvent, imgId: string, currentStatus: boolean) => {
     e.stopPropagation();
@@ -219,16 +223,32 @@ function GalleryContent() {
       constraints.push(where("creatorId", "==", userId));
     } else if (artistIdFromUrl) {
       constraints.push(where("creatorId", "==", artistIdFromUrl));
+    } else if (activeFilter === "Liked") {
+      // Check if profile exists and has liked images to avoid crash
+      const likedIds = profile?.likedImages || [];
+      if (likedIds.length > 0) {
+        // Firestore "in" query limits to 30 IDs
+        constraints.push(where("__name__", "in", likedIds.slice(0, 30)));
+      } else {
+        // If no liked images, immediately set empty and stop loading
+        setImages([]);
+        setLoading(false);
+        return; 
+      }
     }
     
     // Category Filter
-    if (activeFilter !== "All" && activeFilter !== "Trending" && !showMyCreations && !artistIdFromUrl) {
+    // Added "Liked" to the exclusion list so it doesn't conflict with style queries
+    if (activeFilter !== "All" && activeFilter !== "Trending" && activeFilter !== "Liked" && !showMyCreations && !artistIdFromUrl) {
       constraints.push(where("style", "==", activeFilter));
     }
 
     // Order By
     if (activeFilter === "Trending") {
       constraints.push(orderBy("likesCount", "desc"));
+    } else if (activeFilter === "Liked") {
+      // Note: 'in' queries in Firestore usually don't allow orderBy 'createdAt' 
+      // without a complex index, so we omit it for the Liked filter to stay safe
     } else {
       constraints.push(orderBy("createdAt", "desc"));
     }
@@ -240,7 +260,6 @@ function GalleryContent() {
 
       // --- STRICTOR CLIENT-SIDE FILTERING ---
       // Yeh ensure karta hai ki doosron ki private images hide ho jayein
-      // Filtered results
       fetchedImages = fetchedImages.filter(img => {
         // 1. Agar user "My Creations" tab mein hai, toh apni private images dikhao
         if (showMyCreations) {
@@ -274,7 +293,8 @@ function GalleryContent() {
     });
 
     return () => unsub();
-  }, [mounted, activeFilter, showMyCreations, userId, searchQuery]);
+    // Added profile?.likedImages to dependency array so the tab updates when likes change
+  }, [mounted, activeFilter, showMyCreations, userId, searchQuery, profile?.likedImages]);
 
   // --- 2. LOAD MORE FUNCTION ---
   const loadMore = async () => {
@@ -339,6 +359,51 @@ function GalleryContent() {
       console.error("LoadMore Error:", error);
     } finally {
       setLoadingMore(false);
+    }
+  };
+
+  const deleteImage = async (
+    e: React.MouseEvent | React.TouchEvent,
+    imgId: string,
+    creatorId: string
+  ) => {
+    e.stopPropagation();
+
+    // This is your LocalStorage ID (e.g., "u_12345")
+    const currentUid = userId; 
+
+    // Check if the current user is actually the owner
+    if (creatorId !== currentUid) {
+      alert("Permission Denied: You can only delete images that you created on this browser.");
+      return;
+    }
+
+    const confirmDelete = window.confirm("Are you sure? This action will permanently remove this image from the gallery.");
+    
+    if (confirmDelete) {
+      try {
+        // 1. Delete the document from the 'gallery' collection
+        await deleteDoc(doc(db, "gallery", imgId));
+
+        // 2. Decrement the creation count in the 'users' collection
+        const userRef = doc(db, "users", currentUid);
+        await updateDoc(userRef, {
+          totalCreations: increment(-1)
+        });
+
+        // 3. Remove from the local UI state
+        setImages(prev => prev.filter(img => img.id !== imgId));
+        
+        alert("Creation successfully deleted.");
+      } catch (error: any) {
+        console.error("Firestore Delete Error:", error);
+        
+        if (error.code === 'permission-denied') {
+          alert("Database Error: Permission Denied. Please ensure your Firebase Security Rules are published.");
+        } else {
+          alert("An unexpected error occurred: " + error.message);
+        }
+      }
     }
   };
 
@@ -424,16 +489,47 @@ function GalleryContent() {
              </Link>
           </div>
           
+          {/* Optimized Header Toggle & Leaderboard Link */}
           <div className="flex items-center gap-1.5 md:gap-2">
-            <Link href="/leaderboard" className="p-2 md:p-2.5 bg-zinc-900/50 rounded-xl border border-white/10 hover:bg-indigo-600 transition-all duration-300 group shadow-lg">
-              <Trophy size={16} className="text-zinc-400 group-hover:text-white" />
+            <div className="bg-zinc-900/90 p-1 rounded-xl border border-white/10 flex items-center shadow-2xl backdrop-blur-md">
+              
+              {/* Community Button */}
+              <button 
+                onClick={() => setShowMyCreations(false)} 
+                className={`px-3 py-2 md:px-4 md:py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-2 ${
+                  !showMyCreations 
+                    ? 'bg-indigo-600 text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]' 
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <Users size={16} className={!showMyCreations ? 'text-white' : 'text-zinc-500'} />
+                <span className="hidden md:block">Community</span>
+              </button>
+              
+              {/* My Studio Button */}
+              <button 
+                onClick={() => setShowMyCreations(true)} 
+                className={`px-3 py-2 md:px-4 md:py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-2 ${
+                  showMyCreations 
+                    ? 'bg-indigo-600 text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]' 
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <LayoutGrid size={16} className={showMyCreations ? 'text-white' : 'text-zinc-500'} />
+                <span className="hidden md:block">My Studio</span>
+              </button>
+            </div>
+
+            {/* Leaderboard Link */}
+            <Link 
+              href="/leaderboard" 
+              className="p-2 md:p-2.5 bg-zinc-900/80 rounded-xl border border-white/10 hover:bg-indigo-600 hover:border-indigo-400 transition-all duration-300 shadow-xl group"
+            >
+              <Trophy 
+                size={16} 
+                className="text-zinc-400 group-hover:text-white transition-colors" 
+              />
             </Link>
-            <button onClick={() => setShowMyCreations(!showMyCreations)} className={`p-2 md:p-2.5 rounded-xl border transition-all duration-300 shadow-lg ${showMyCreations ? 'bg-indigo-600 border-indigo-400' : 'bg-zinc-900/50 border-white/10'}`}>
-              <Eye size={16} className={showMyCreations ? "text-white" : "text-zinc-400"} />
-            </button>
-            <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert("Link Copied!"); }} className="p-2 md:p-2.5 bg-zinc-900/50 rounded-xl border border-white/10 transition-all duration-300 shadow-lg group">
-              <Share2 size={16} className="text-zinc-400 group-hover:text-indigo-400" />
-            </button>
           </div>
         </div>
       </header>
@@ -587,69 +683,77 @@ function GalleryContent() {
         {/* Gallery Grid */}
         {loading && images.length === 0 ? (
           <div className="py-24 text-center">
-            <Zap className="text-indigo-500 animate-pulse mx-auto mb-4" size={32}/>
+            <Zap className="text-indigo-500 animate-pulse mx-auto mb-4" size={32} />
             <p className="text-[9px] font-black uppercase tracking-[0.5em] opacity-30">Generating Flow...</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mt-6">
             {images.map((img, idx) => {
+              // LEADERBOARD RANK LOGIC
               const isGlobalRank1 = globalLeaderboard[0]?.id === img.creatorId;
               const isGlobalRank2 = globalLeaderboard[1]?.id === img.creatorId;
               const isGlobalRank3 = globalLeaderboard[2]?.id === img.creatorId;
-              
+
+              // OWNERSHIP & PRIZE ELIGIBILITY
               const isOwn = img.creatorId === userId;
               const is1stEligible = (isMonday || isTuesday) && profile?.isSeasonWinner && isOwn;
               const is2ndEligible = isMonday && profile?.isSecondPlace && isOwn;
               const hasPrize = is1stEligible || is2ndEligible;
 
               // GLOBAL LEVEL FRAMES
-              const frameStyle = isGlobalRank1 
-                ? "border-yellow-500 shadow-[0_0_25px_-5px_rgba(234,179,8,0.4)] ring-1 ring-yellow-500/20" 
-                : isGlobalRank2 
-                ? "border-slate-400 shadow-[0_0_15px_-5px_rgba(148,163,184,0.3)]" 
-                : isGlobalRank3
-                ? "border-orange-600/50"
-                : "border-white/5";
+              const frameStyle = isGlobalRank1
+                ? "border-yellow-500 shadow-[0_0_25px_-5px_rgba(234,179,8,0.4)] ring-1 ring-yellow-500/20"
+                : isGlobalRank2
+                  ? "border-slate-400 shadow-[0_0_15px_-5px_rgba(148,163,184,0.3)]"
+                  : isGlobalRank3
+                    ? "border-orange-600/50"
+                    : "border-white/5";
 
               return (
-                <div 
-                  key={img.id} 
+                <div
+                  key={img.id}
                   ref={idx === images.length - 1 ? lastImageElementRef : null}
                   className={`group relative w-full aspect-[4/5] bg-zinc-900 rounded-[24px] md:rounded-[40px] overflow-hidden border transition-all duration-500 ${frameStyle}`}
                 >
+                  {/* Gold Glow for Rank 1 */}
                   {isGlobalRank1 && <div className="absolute inset-0 bg-gradient-to-tr from-yellow-500/5 to-transparent pointer-events-none z-10" />}
-                  
-                  <img src={img.imageUrl} className="w-full h-full object-cover transition-transform duration-[1s] group-hover:scale-105" loading="lazy" />
-                  
+
+                  {/* Main Image */}
+                  <img
+                    src={img.imageUrl}
+                    className="w-full h-full object-cover transition-transform duration-[1s] group-hover:scale-105"
+                    loading="lazy"
+                    alt={img.prompt}
+                  />
+
+                  {/* Small Private Indicator (Top Right) */}
                   {img.creatorId === userId && img.isPrivate && (
-                    <div className="absolute top-2 right-2 bg-black/60 p-1 rounded-full">
+                    <div className="absolute top-2 right-2 bg-black/60 p-1 rounded-full z-20 md:hidden">
                       <Lock size={14} className="text-yellow-500" />
                     </div>
                   )}
 
-                  {/* Badges */}
+                  {/* Badges (Top Left - Desktop/Global) */}
                   {(isGlobalRank1 || isGlobalRank2 || isGlobalRank3) && (
-                    <div className={`absolute top-4 left-4 z-20 p-1.5 rounded-lg backdrop-blur-md border flex items-center gap-1.5 ${
-                      isGlobalRank1 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-500' : 
-                      isGlobalRank2 ? 'bg-slate-400/20 border-slate-400/40 text-slate-300' : 
-                      'bg-orange-600/20 border-orange-600/40 text-orange-500'
-                    }`}>
-                       {isGlobalRank1 ? <Crown size={12} /> : <ShieldCheck size={12} />}
-                       <span className="text-[7px] font-black uppercase tracking-tighter">
-                         {isGlobalRank1 ? "Global King" : isGlobalRank2 ? "Elite" : "Master"}
-                       </span>
+                    <div className={`absolute top-4 left-4 z-20 p-1.5 rounded-lg backdrop-blur-md border flex items-center gap-1.5 ${isGlobalRank1 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-500' :
+                        isGlobalRank2 ? 'bg-slate-400/20 border-slate-400/40 text-slate-300' :
+                          'bg-orange-600/20 border-orange-600/40 text-orange-500'
+                      }`}>
+                      {isGlobalRank1 ? <Crown size={12} /> : <ShieldCheck size={12} />}
+                      <span className="text-[7px] font-black uppercase tracking-tighter">
+                        {isGlobalRank1 ? "Global King" : isGlobalRank2 ? "Elite" : "Master"}
+                      </span>
                     </div>
                   )}
 
-                  {/* Public/Private Toggle - Only for owner */}
+                  {/* Privacy Toggle (Top Left) - Only shown to Owner */}
                   {isOwn && (
-                    <button 
+                    <button
                       onClick={(e) => togglePrivacy(e, img.id, !!img.isPrivate)}
-                      className={`absolute top-4 left-4 z-30 p-2 md:p-2.5 rounded-xl backdrop-blur-xl border flex items-center gap-2 transition-all shadow-xl active:scale-90 ${
-                        img.isPrivate 
-                          ? 'bg-orange-500/20 border-orange-500/40 text-orange-500' 
+                      className={`absolute top-4 left-4 z-30 p-2 md:p-2.5 rounded-xl backdrop-blur-xl border flex items-center gap-2 transition-all shadow-xl active:scale-90 ${img.isPrivate
+                          ? 'bg-orange-500/20 border-orange-500/40 text-orange-500'
                           : 'bg-black/60 border-white/10 text-white hover:bg-indigo-600'
-                      }`}
+                        }`}
                     >
                       {img.isPrivate ? <Lock size={14} /> : <Globe size={14} className="text-green-400" />}
                       <span className="text-[8px] font-black uppercase tracking-tighter hidden md:block">
@@ -658,36 +762,61 @@ function GalleryContent() {
                     </button>
                   )}
 
+                  {/* Delete Button (Top Middle-Right) - Only in My Studio for Owner */}
+                  {showMyCreations && isOwn && (
+                    <button
+                      onClick={(e) => deleteImage(e, img.id, img.creatorId)}
+                      className="absolute top-4 right-16 z-30 p-2 md:p-2.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-500 backdrop-blur-xl hover:bg-red-500 hover:text-white transition-all shadow-xl active:scale-90"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+
+                  {/* Like Button (Top Right) */}
                   <div className="absolute top-4 right-4 z-20">
-                    <button onClick={(e) => handleLike(e, img)} className={`p-2.5 rounded-xl backdrop-blur-xl border border-white/10 flex items-center gap-2 transition-all ${profile?.likedImages?.includes(img.id) ? 'bg-red-500 border-red-400 text-white' : 'bg-black/60 text-white'}`}>
+                    <button
+                      onClick={(e) => handleLike(e, img)}
+                      className={`p-2.5 rounded-xl backdrop-blur-xl border border-white/10 flex items-center gap-2 transition-all ${profile?.likedImages?.includes(img.id) ? 'bg-red-500 border-red-400 text-white' : 'bg-black/60 text-white'}`}
+                    >
                       <Heart size={14} fill={profile?.likedImages?.includes(img.id) ? "white" : "none"} />
                       <span className="text-[10px] font-black">{img.likesCount || 0}</span>
                     </button>
                   </div>
 
-                  <div className="absolute inset-x-0 bottom-0 p-4 md:p-6 bg-gradient-to-t from-black via-black/95 to-transparent flex flex-col gap-3 translate-y-4 group-hover:translate-y-0 transition-all">
+                  {/* Bottom Info Overlay */}
+                  <div className="absolute inset-x-0 bottom-0 p-4 md:p-6 bg-gradient-to-t from-black via-black/95 to-transparent flex flex-col gap-3 translate-y-4 group-hover:translate-y-0 transition-all duration-300">
+                    
                     {/* Creator Name Label */}
                     <div className="flex items-center gap-2 px-1">
-                        <div className="w-4 h-4 rounded-full bg-indigo-500 flex items-center justify-center">
-                            <User size={8} className="text-white" />
-                        </div>
-                        <p className="text-[9px] font-black text-indigo-400 uppercase tracking-tight">
-                            {img.creatorName || 'Anonymous Creator'}
-                        </p>
+                      <div className="w-4 h-4 rounded-full bg-indigo-500 flex items-center justify-center">
+                        <User size={8} className="text-white" />
+                      </div>
+                      <p className="text-[9px] font-black text-indigo-400 uppercase tracking-tight">
+                        {img.creatorName || 'Anonymous Creator'}
+                      </p>
                     </div>
 
+                    {/* Action Buttons */}
                     <div className="flex gap-2">
-                      <button onClick={() => downloadImage(img)} className={`flex-1 py-2.5 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${hasPrize ? 'bg-yellow-500 text-black' : 'bg-white text-black'}`}>
-                        {hasPrize ? <Gift size={14}/> : <Download size={14}/>} 
+                      <button
+                        onClick={() => downloadImage(img)}
+                        className={`flex-1 py-2.5 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${hasPrize ? 'bg-yellow-500 text-black' : 'bg-white text-black'}`}
+                      >
+                        {hasPrize ? <Gift size={14} /> : <Download size={14} />}
                         {hasPrize ? "No Watermark" : "Download"}
                       </button>
-                      <button onClick={() => router.push(`/?prompt=${img.prompt}`)} className="bg-zinc-800/80 p-2.5 rounded-lg border border-white/10 hover:bg-indigo-600">
-                        <Zap size={14} className="fill-white"/>
+                      <button
+                        onClick={() => router.push(`/?prompt=${encodeURIComponent(img.prompt)}`)}
+                        className="bg-zinc-800/80 p-2.5 rounded-lg border border-white/10 hover:bg-indigo-600 transition-colors"
+                      >
+                        <Zap size={14} className="fill-white" />
                       </button>
                     </div>
+
+                    {/* Prompt & Style Tag */}
                     <div className="flex items-center justify-between opacity-60">
-                       <p className="text-[8px] font-bold italic line-clamp-1 truncate flex-1 text-zinc-400">"{img.prompt}"</p>
-                       <span className="text-[7px] font-black uppercase bg-white/10 px-1.5 py-0.5 rounded ml-2">{img.style || 'AI'}</span>
+                      <p className="text-[8px] font-bold italic line-clamp-1 truncate flex-1 text-zinc-400">"{img.prompt}"</p>
+                      <span className="text-[7px] font-black uppercase bg-white/10 px-1.5 py-0.5 rounded ml-2">{img.style || 'AI'}</span>
                     </div>
                   </div>
                 </div>
