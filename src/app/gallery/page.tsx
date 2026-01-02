@@ -539,25 +539,28 @@ function GalleryContent() {
   if (!mounted) return <div className="min-h-screen bg-black" />;
 
   const updateNameGlobally = async () => {
-    // 1. Validation: Don't run if name is empty or hasn't changed
-    if (!newName || newName === profile?.displayName) {
+    if (!newName || newName.trim() === "" || newName === profile?.displayName) {
       setIsEditing(false);
       return;
     }
 
     try {
-      // 2. Update the User Profile document first
+      // 1. Update the User document (This fixes the Leaderboard)
       const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, { displayName: newName });
+      await updateDoc(userRef, { 
+        displayName: newName,
+        // Ensure this field exists for the leaderboard listener
+        lastActive: new Date() 
+      });
 
-      // 3. Find all images in 'gallery' created by this userId
+      // 2. Find all images created by this user to update their "creatorName"
       const imgQuery = query(
         collection(db, "gallery"), 
         where("creatorId", "==", userId)
       );
       const querySnapshot = await getDocs(imgQuery);
 
-      // 4. Create a Batch update
+      // 3. Batch update all gallery images (This fixes the Gallery display)
       const { writeBatch } = await import("firebase/firestore");
       const batch = writeBatch(db);
 
@@ -565,15 +568,16 @@ function GalleryContent() {
         batch.update(imageDoc.ref, { creatorName: newName });
       });
 
-      // 5. Commit all changes to the database
       await batch.commit();
 
       setIsEditing(false);
-      console.log("Success: Name updated on all previous images.");
+      // Optional: Refresh local state to show change immediately
+      setNewName(newName);
+      
     } catch (error) {
       console.error("Global Update Error:", error);
-      alert("Failed to update name on previous images.");
-      setNewName(profile?.displayName || ""); // Reset UI to old name on failure
+      alert("Update failed. Check your internet connection.");
+      setNewName(profile?.displayName || "");
       setIsEditing(false);
     }
   };
@@ -783,9 +787,18 @@ function GalleryContent() {
                   <p className="text-[9px] md:text-[10px] text-zinc-400 leading-relaxed font-bold">2nd Place: <span className="text-white">NO WATERMARK</span> for <span className="text-slate-300">Monday</span>.</p>
                 </div>
                 <div className="md:col-span-2 p-3.5 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                       <TrendingUp size={14} className="text-indigo-500" />
-                       <p className="text-[9px] font-black uppercase text-zinc-300">Ranks reset every Sunday at midnight.</p>
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-3">
+                        <TrendingUp size={14} className="text-indigo-500" />
+                        <div className="flex flex-col">
+                          <p className="text-[10px] font-black uppercase text-zinc-200 tracking-tight">
+                            Season: <span className="text-indigo-400">Mon 00:00 - Sun 23:59</span>
+                          </p>
+                          <p className="text-[8px] font-bold text-zinc-500 uppercase">
+                            Next Reset: This Sunday, Midnight
+                          </p>
+                        </div>
+                      </div>
                     </div>
                     <div className="bg-indigo-500/10 px-3 py-1.5 rounded-full border border-indigo-500/20 w-full md:w-auto text-center">
                        <p className="text-[8px] font-black text-indigo-400 uppercase tracking-tighter">{timeLeft}</p>
