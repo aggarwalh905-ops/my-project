@@ -302,68 +302,62 @@ function GalleryContent() {
 
     const searchParams = new URLSearchParams(window.location.search);
     const artistIdFromUrl = searchParams.get('user');
-
     let constraints: any[] = [];
 
-    // Sorting & Ownership logic
-    if (showMyCreations) {
-      constraints.push(where("creatorId", "==", userId));
-    } else if (artistIdFromUrl) {
-      constraints.push(where("creatorId", "==", artistIdFromUrl));
-    } else if (activeFilter === "Liked") {
-      // Check if profile exists and has liked images to avoid crash
+    // --- LIKED FILTER LOGIC ---
+    if (activeFilter === "Liked") {
       const likedIds = profile?.likedImages || [];
       if (likedIds.length > 0) {
-        // Firestore "in" query limits to 30 IDs
-        constraints.push(where("__name__", "in", likedIds.slice(0, 30)));
+        // Hum 100 images tak fetch kar rahe hain (Firestore limit 30 hai "in" query ki, 
+        // isliye agar 30 se zyada hain toh hum manually filter wala logic use karenge)
+        if (likedIds.length <= 30) {
+          constraints.push(where("__name__", "in", likedIds));
+        } else {
+          // Agar 30 se zyada hain, toh saari public fetch karke client-side filter karenge
+          // No extra constraints needed here, filtering inside onSnapshot
+        }
       } else {
-        // If no liked images, immediately set empty and stop loading
         setImages([]);
         setLoading(false);
-        return; 
+        return;
       }
-    }
-    
-    // Category Filter
-    // Added "Liked" to the exclusion list so it doesn't conflict with style queries
-    if (activeFilter !== "All" && activeFilter !== "Trending" && activeFilter !== "Liked" && !showMyCreations && !artistIdFromUrl) {
-      constraints.push(where("style", "==", activeFilter));
-    }
-
-    // Order By
-    if (activeFilter === "Trending") {
-      constraints.push(orderBy("likesCount", "desc"));
-    } else if (activeFilter === "Liked") {
-      // Note: 'in' queries in Firestore usually don't allow orderBy 'createdAt' 
-      // without a complex index, so we omit it for the Liked filter to stay safe
-    } else {
+    } 
+    // --- OTHER FILTERS ---
+    else if (showMyCreations) {
+      constraints.push(where("creatorId", "==", userId));
       constraints.push(orderBy("createdAt", "desc"));
+    } else if (artistIdFromUrl) {
+      constraints.push(where("creatorId", "==", artistIdFromUrl));
+      constraints.push(orderBy("createdAt", "desc"));
+    } else {
+      if (activeFilter !== "All" && activeFilter !== "Trending") {
+        constraints.push(where("style", "==", activeFilter));
+      }
+      const orderField = activeFilter === "Trending" ? "likesCount" : "createdAt";
+      constraints.push(orderBy(orderField, "desc"));
     }
 
-    const q = query(collection(db, "gallery"), ...constraints, limit(100)); 
-    
+    const q = query(collection(db, "gallery"), ...constraints, limit(100));
+
     const unsub = onSnapshot(q, (snap) => {
       let fetchedImages = snap.docs.map(d => ({ id: d.id, ...d.data() } as GalleryImage));
 
-      // --- STRICTOR CLIENT-SIDE FILTERING ---
-      // Yeh ensure karta hai ki doosron ki private images hide ho jayein
+      // Client-side Filter for Liked (if > 30) and Privacy
       fetchedImages = fetchedImages.filter(img => {
-        // 1. Agar user "My Creations" tab mein hai, toh apni private images dikhao
-        if (showMyCreations) {
-          return true; 
-        }
-
-        // 2. Agar user Main Feed ya kisi aur ki profile dekh raha hai:
-        // Toh 'Private' image kisi ko nahi dikhni chahiye (Aapko bhi nahi)
-        if (img.isPrivate === true) {
-          return false;
-        }
-
-        // 3. Baaki sab dikhao (Public + Purani images)
-        return true;
+        if (activeFilter === "Liked") return profile?.likedImages?.includes(img.id);
+        if (showMyCreations) return true;
+        return img.isPrivate !== true;
       });
 
-      // Search Filter
+      // --- RECENTLY LIKED SORTING ---
+      if (activeFilter === "Liked" && profile?.likedImages) {
+        fetchedImages.sort((a, b) => {
+          const indexA = profile.likedImages.indexOf(a.id);
+          const indexB = profile.likedImages.indexOf(b.id);
+          return indexB - indexA; // Latest liked (higher index) comes first
+        });
+      }
+
       if (searchQuery.trim() !== "") {
         fetchedImages = fetchedImages.filter(img => 
           img.prompt.toLowerCase().includes(searchQuery.toLowerCase())
@@ -371,16 +365,12 @@ function GalleryContent() {
       }
 
       setImages(fetchedImages);
-      setHasMore(snap.docs.length === 100);
       setLastDoc(snap.docs[snap.docs.length - 1]);
-      setLoading(false);
-    }, (err) => {
-      console.error("Firestore Error:", err);
+      setHasMore(snap.docs.length === 100);
       setLoading(false);
     });
 
     return () => unsub();
-    // Added profile?.likedImages to dependency array so the tab updates when likes change
   }, [mounted, activeFilter, showMyCreations, userId, searchQuery, profile?.likedImages]);
 
   // --- 2. LOAD MORE FUNCTION ---
@@ -388,55 +378,80 @@ function GalleryContent() {
     if (!lastDoc || loadingMore) return;
     setLoadingMore(true);
 
+    let constraints: any[] = [];
+
+    // 1. Core Logic Filters (Ownership & Artist Profile)
     const searchParams = new URLSearchParams(window.location.search);
     const artistIdFromUrl = searchParams.get('user');
 
-    let constraints: any[] = [];
-    
     if (showMyCreations) {
-        constraints.push(where("creatorId", "==", userId));
+      constraints.push(where("creatorId", "==", userId));
     } else if (artistIdFromUrl) {
-        constraints.push(where("creatorId", "==", artistIdFromUrl));
+      constraints.push(where("creatorId", "==", artistIdFromUrl));
     }
 
-    if (activeFilter !== "All" && activeFilter !== "Trending" && !showMyCreations && !artistIdFromUrl) {
+    // 2. Category Style Filter (Excluding special tabs)
+    if (activeFilter !== "All" && activeFilter !== "Trending" && activeFilter !== "Liked" && !showMyCreations && !artistIdFromUrl) {
       constraints.push(where("style", "==", activeFilter));
     }
 
+    // 3. Sorting Constraints (Essential for startAfter to work)
     if (activeFilter === "Trending") {
       constraints.push(orderBy("likesCount", "desc"));
     } else {
+      // Liked filter aur baaki sab ke liye createdAt use hoga
       constraints.push(orderBy("createdAt", "desc"));
     }
-    
+
     try {
       const nextQ = query(
-        collection(db, "gallery"), 
-        ...constraints, 
-        startAfter(lastDoc), 
-        limit(24) 
+        collection(db, "gallery"),
+        ...constraints,
+        startAfter(lastDoc),
+        limit(24)
       );
-      
+
       const snap = await getDocs(nextQ);
-      
+
       if (!snap.empty) {
         let newImages = snap.docs.map(d => ({ id: d.id, ...d.data() } as GalleryImage));
 
-        // --- STRICTOR CLIENT-SIDE FILTERING (Load More) ---
+        // 4. Strict Client-side Filtering
         newImages = newImages.filter(img => {
-          if (img.creatorId === userId) return true;
+          // Liked Tab Logic
+          if (activeFilter === "Liked") {
+            return profile?.likedImages?.includes(img.id);
+          }
+          
+          // My Studio Logic
+          if (showMyCreations) return true;
+
+          // Public/Private Logic
           if (img.isPrivate === true) return false;
-          return true; 
+          return true;
         });
 
-        // Search Filter
+        // 5. Search Filter (agar user ne search query likhi hai)
         if (searchQuery.trim() !== "") {
-          newImages = newImages.filter(img => 
+          newImages = newImages.filter(img =>
             img.prompt.toLowerCase().includes(searchQuery.toLowerCase())
           );
         }
 
-        setImages(prev => [...prev, ...newImages]);
+        setImages(prev => {
+          const combined = [...prev, ...newImages];
+          
+          // 6. Recently Liked Sorting (Load More data ke liye bhi apply hoga)
+          if (activeFilter === "Liked" && profile?.likedImages) {
+            return combined.sort((a, b) => {
+              const idxA = profile.likedImages.indexOf(a.id);
+              const idxB = profile.likedImages.indexOf(b.id);
+              return idxB - idxA;
+            });
+          }
+          return combined;
+        });
+
         setLastDoc(snap.docs[snap.docs.length - 1]);
         setHasMore(snap.docs.length === 24);
       } else {
@@ -1001,10 +1016,20 @@ function GalleryContent() {
           </div>
         )}
         
-        {loadingMore && (
-           <div className="py-10 text-center">
-              <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-           </div>
+        {/* Gallery Grid ke niche ye button add karein */}
+        {hasMore && !loading && (
+          <div className="flex justify-center mt-12 mb-20">
+            <button 
+              onClick={loadMore}
+              className="group relative px-8 py-3 bg-zinc-900 border border-white/10 rounded-2xl overflow-hidden transition-all hover:border-indigo-500/50"
+            >
+              <div className="absolute inset-0 bg-indigo-600/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <span className="relative text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                {loadingMore ? 'Loading Assets...' : 'Load More Creations'}
+                <Zap size={14} className="text-indigo-500" />
+              </span>
+            </button>
+          </div>
         )}
       </main>
     </div>
