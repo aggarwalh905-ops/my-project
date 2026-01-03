@@ -529,7 +529,9 @@ function GalleryContent() {
     const bitmap = await createImageBitmap(blob);
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
+    
     if (!ctx) return;
+    
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
     ctx.drawImage(bitmap, 0, 0);
@@ -538,20 +540,27 @@ function GalleryContent() {
     const is1stEligible = (isMonday || isTuesday) && profile?.isSeasonWinner && isOwn;
     const is2ndEligible = isMonday && profile?.isSecondPlace && isOwn;
 
+    // Apply watermark if NOT eligible for unwatermarked version
     if (!is1stEligible && !is2ndEligible) {
-      ctx.font = `bold ${canvas.width * 0.04}px sans-serif`;
-      ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
-      ctx.textAlign = "center";
-      ctx.fillText("Imagynex.AI", canvas.width / 2, canvas.height - 40);
+      const fontSize = Math.floor(canvas.width * 0.04);
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.5)"; // Increased opacity
+      ctx.textAlign = "right";
+      ctx.textBaseline = "bottom";
+
+      // Shadow for better visibility on light backgrounds
+      ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+      ctx.shadowBlur = 10;
+
+      // Positioned at bottom right with padding
+      ctx.fillText("Imagynex.AI", canvas.width - 20, canvas.height - 20);
     }
 
     const link = document.createElement("a");
     link.download = `Imagynex-${img.id}.png`;
-    link.href = canvas.toDataURL();
+    link.href = canvas.toDataURL("image/png");
     link.click();
   };
-
-  if (!mounted) return <div className="min-h-screen bg-black" />;
 
   const updateNameGlobally = async () => {
     if (!newName || newName.trim() === "" || newName === profile?.displayName) {
@@ -662,10 +671,10 @@ function GalleryContent() {
                 className={`px-3 py-2 md:px-4 md:py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-2 ${
                   !showMyCreations 
                     ? 'bg-indigo-600 text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]' 
-                    : 'text-zinc-500 hover:text-zinc-300'
+                    : 'text-zinc-400 hover:text-zinc-300'
                 }`}
               >
-                <Users size={16} className={!showMyCreations ? 'text-white' : 'text-zinc-500'} />
+                <Users size={16} className={!showMyCreations ? 'text-white' : 'text-zinc-400'} />
                 <span className="hidden md:block">Community</span>
               </button>
               
@@ -675,10 +684,10 @@ function GalleryContent() {
                 className={`px-3 py-2 md:px-4 md:py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all duration-300 flex items-center gap-2 ${
                   showMyCreations 
                     ? 'bg-indigo-600 text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]' 
-                    : 'text-zinc-500 hover:text-zinc-300'
+                    : 'text-zinc-400 hover:text-zinc-300'
                 }`}
               >
-                <LayoutGrid size={16} className={showMyCreations ? 'text-white' : 'text-zinc-500'} />
+                <LayoutGrid size={16} className={showMyCreations ? 'text-white' : 'text-zinc-400'} />
                 <span className="hidden md:block">My Studio</span>
               </button>
             </div>
@@ -708,22 +717,22 @@ function GalleryContent() {
               <div className="flex justify-between items-center mb-8 relative z-10">
                 <div>
                   <h2 className="text-xl font-black uppercase italic tracking-tighter text-red-500">System Administrator</h2>
-                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Master Database Control</p>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Master Database Control</p>
                 </div>
                 <button onClick={() => setIsAdmin(false)} className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl text-[10px] font-black uppercase transition-all">Logout</button>
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
                 <div className="bg-black/40 p-5 rounded-3xl border border-white/5">
-                  <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Total Assets</p>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Total Assets</p>
                   <p className="text-3xl font-black">{dbStats.total}</p>
                 </div>
                 <div className="bg-black/40 p-5 rounded-3xl border border-white/5">
-                  <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Public/Private</p>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Public/Private</p>
                   <p className="text-3xl font-black text-indigo-500">{dbStats.public} <span className="text-zinc-700">/</span> {dbStats.private}</p>
                 </div>
                 <div className="bg-black/40 p-5 rounded-3xl border border-white/5">
-                  <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Database Weight</p>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Database Weight</p>
                   <p className="text-3xl font-black text-emerald-500">{dbStats.storageMB} <span className="text-sm">MB</span></p>
                 </div>
                 <button onClick={fetchAdminStats} className="bg-white text-black rounded-3xl font-black uppercase text-[10px] hover:scale-95 transition-transform">Refresh Data</button>
@@ -785,15 +794,15 @@ function GalleryContent() {
                <div className="grid grid-cols-3 gap-2 mt-6 md:mt-8 pt-6 border-t border-white/5">
                   <div className="bg-white/5 p-3 rounded-2xl text-center border border-indigo-500/10">
                      <p className="text-base md:text-lg font-black text-indigo-400">{profile?.totalLikes || 0}</p>
-                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-500">Total Likes</p>
+                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-400">Total Likes</p>
                   </div>
                   <div className="bg-white/5 p-3 rounded-2xl text-center border border-yellow-500/10">
                      <p className="text-base md:text-lg font-black text-yellow-500">{profile?.weeklyLikes || 0}</p>
-                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-500">Season</p>
+                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-400">Season</p>
                   </div>
                   <div className="bg-white/5 p-3 rounded-2xl text-center">
                      <p className="text-base md:text-lg font-black text-white">{profile?.totalCreations || 0}</p>
-                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-500">Items</p>
+                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-400">Items</p>
                   </div>
                </div>
             </div>
@@ -826,7 +835,7 @@ function GalleryContent() {
                           <p className="text-[10px] font-black uppercase text-zinc-200 tracking-tight">
                             Season: <span className="text-indigo-400">Mon 00:00 - Sun 23:59</span>
                           </p>
-                          <p className="text-[8px] font-bold text-zinc-500 uppercase">
+                          <p className="text-[8px] font-bold text-zinc-400 uppercase">
                             Next Reset: This Sunday, Midnight
                           </p>
                         </div>
@@ -851,7 +860,7 @@ function GalleryContent() {
                      { bg: 'from-yellow-400 to-amber-600', border: 'border-yellow-500/40', icon: 'text-yellow-500' },
                      { bg: 'from-slate-300 to-slate-500', border: 'border-slate-500/40', icon: 'text-slate-400' },
                      { bg: 'from-orange-400 to-orange-700', border: 'border-orange-500/40', icon: 'text-orange-600' }
-                   ][idx] || { bg: 'from-zinc-600 to-zinc-800', border: 'border-white/5', icon: 'text-zinc-500' };
+                   ][idx] || { bg: 'from-zinc-600 to-zinc-800', border: 'border-white/5', icon: 'text-zinc-400' };
 
                    return (
                      <div key={artist.id} onClick={() => router.push(`/gallery?user=${artist.id}`)} className={`group relative p-4 rounded-2xl border transition-all duration-500 bg-gradient-to-b from-white/[0.03] to-transparent ${colors.border} cursor-pointer hover:-translate-y-1`}>
@@ -882,12 +891,12 @@ function GalleryContent() {
         {/* Search & Filter Sticky Bar */}
         <div className="sticky top-[64px] md:top-[88px] z-50 bg-[#020202]/95 backdrop-blur-xl py-4 space-y-4 border-b border-white/5 -mx-4 px-4 shadow-xl">
           <div className="relative group max-w-2xl mx-auto">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={14}/>
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={14}/>
             <input placeholder="Search Prompts..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-zinc-900/60 border border-white/10 rounded-xl py-3 pl-11 pr-4 text-[10px] font-bold uppercase outline-none focus:border-indigo-500/50 transition-all" />
           </div>
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 justify-start md:justify-center">
             {categories.map(cat => (
-              <button key={cat} onClick={() => setActiveFilter(cat)} className={`whitespace-nowrap px-4 py-2 rounded-lg text-[8px] font-black uppercase border transition-all flex items-center gap-2 ${activeFilter === cat ? 'bg-white text-black border-white' : 'bg-zinc-900/40 border-white/5 text-zinc-500'}`}>
+              <button key={cat} onClick={() => setActiveFilter(cat)} className={`whitespace-nowrap px-4 py-2 rounded-lg text-[8px] font-black uppercase border transition-all flex items-center gap-2 ${activeFilter === cat ? 'bg-white text-black border-white' : 'bg-zinc-900/40 border-white/5 text-zinc-400'}`}>
                 {cat === "Trending" && <Flame size={10} fill={activeFilter === "Trending" ? "black" : "none"}/>} {cat}
               </button>
             ))}

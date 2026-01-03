@@ -74,7 +74,7 @@ export default function About() {
           <h1 className="text-5xl md:text-9xl font-black tracking-tighter italic uppercase mb-8 leading-[0.85] bg-gradient-to-b from-white to-zinc-600 bg-clip-text text-transparent">
             Where Dreams <br /> <span className="text-white">Synthesize.</span>
           </h1>
-          <p className="max-w-xl mx-auto text-zinc-500 text-sm md:text-base font-bold uppercase tracking-widest leading-relaxed">
+          <p className="max-w-xl mx-auto text-zinc-400 text-sm md:text-base font-bold uppercase tracking-widest leading-relaxed">
             Integrating Pollinations AI with Puter-driven prompt architecture for the next generation of visual visionaries.
           </p>
         </section>
@@ -85,7 +85,7 @@ export default function About() {
             {stats.map((stat, i) => (
               <div key={i} className="text-center group">
                 <div className="text-3xl md:text-5xl font-black text-white mb-2 group-hover:text-indigo-500 transition-colors">{stat.value}</div>
-                <div className="text-[9px] font-black uppercase tracking-[0.3em] text-zinc-600">{stat.label}</div>
+                <div className="text-[9px] font-black uppercase tracking-[0.3em] text-zinc-500">{stat.label}</div>
               </div>
             ))}
           </div>
@@ -97,7 +97,7 @@ export default function About() {
             <div className="space-y-12">
               <div>
                 <h2 className="text-4xl font-black uppercase italic tracking-tighter mb-6">The Infrastructure</h2>
-                <p className="text-zinc-500 leading-relaxed text-lg font-medium">
+                <p className="text-zinc-400 leading-relaxed text-lg font-medium">
                   Imagynex is a high-performance workspace utilizing a hybrid stack of decentralized neural networks and cloud-based LLM logic.
                 </p>
               </div>
@@ -108,7 +108,7 @@ export default function About() {
                     <div className="mt-1 group-hover:scale-110 transition-transform">{f.icon}</div>
                     <div>
                       <h4 className="font-black uppercase tracking-widest text-xs mb-2 text-white">{f.title}</h4>
-                      <p className="text-zinc-500 text-[10px] leading-relaxed font-bold uppercase tracking-tight">{f.desc}</p>
+                      <p className="text-zinc-400 text-[10px] leading-relaxed font-bold uppercase tracking-tight">{f.desc}</p>
                     </div>
                   </div>
                 ))}

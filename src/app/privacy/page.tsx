@@ -25,14 +25,14 @@ export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-[#020202] text-zinc-100 font-sans">
       <nav className="p-6">
-        <Link href="/" className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-white transition">
+        <Link href="/" className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white transition">
           <ArrowLeft size={14} /> Return to Home
         </Link>
       </nav>
 
       <main className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-4xl font-black tracking-tighter uppercase italic mb-4">Privacy <span className="text-indigo-500">Protocol</span></h1>
-        <p className="text-zinc-500 text-xs uppercase tracking-[0.2em] mb-12">Last Updated: October 2025</p>
+        <p className="text-zinc-400 text-xs uppercase tracking-[0.2em] mb-12">Last Updated: October 2025</p>
 
         <div className="space-y-12">
           {sections.map((section, i) => (
@@ -51,7 +51,7 @@ export default function PrivacyPage() {
         </div>
 
         <footer className="mt-24 pt-12 border-t border-white/5 text-center">
-          <p className="text-zinc-600 text-[10px] font-black uppercase tracking-widest">
+          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">
             Imagynex AI Security Division
           </p>
         </footer>

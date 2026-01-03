@@ -54,7 +54,7 @@ export default function GlobalLeaderboard() {
     { name: "Artisan", likes: 500, creations: 50, color: "text-cyan-400", bg: "bg-cyan-400/10", icon: <Diamond size={14} />, desc: "Crafting High-Tier Visuals" },
     { name: "Elite", likes: 100, creations: 20, color: "text-emerald-400", bg: "bg-emerald-400/10", icon: <Rocket size={14} />, desc: "Breaking through the atmosphere" },
     { name: "Pro", likes: 10, creations: 5, color: "text-orange-400", bg: "bg-orange-400/10", icon: <Zap size={14} />, desc: "Active Network Contributor" },
-    { name: "Novice", likes: 0, creations: 0, color: "text-zinc-500", bg: "bg-zinc-500/10", icon: <Activity size={14} />, desc: "New Agent Initialized" },
+    { name: "Novice", likes: 0, creations: 0, color: "text-zinc-400", bg: "bg-zinc-500/10", icon: <Activity size={14} />, desc: "New Agent Initialized" },
   ];
 
   // Helper Functions
@@ -204,7 +204,7 @@ export default function GlobalLeaderboard() {
               <div className="flex justify-between items-start mb-6">
                 <div>
                   <h3 className="font-black italic text-2xl uppercase tracking-tighter">System Intel</h3>
-                  <p className="text-[10px] text-zinc-500 font-bold uppercase mt-1">Milestones & Leveling Guide</p>
+                  <p className="text-[10px] text-zinc-400 font-bold uppercase mt-1">Milestones & Leveling Guide</p>
                 </div>
                 <button onClick={() => setShowInfo(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10"><X size={20}/></button>
               </div>
@@ -232,7 +232,7 @@ export default function GlobalLeaderboard() {
                           <span className="text-[8px] font-black text-cyan-400 uppercase">{m.creations}+ Creations</span>
                         </div>
                       </div>
-                      <p className="text-[9px] text-zinc-500 font-medium italic mt-0.5">{m.desc}</p>
+                      <p className="text-[9px] text-zinc-400 font-medium italic mt-0.5">{m.desc}</p>
                     </div>
                   </div>
                 ))}
@@ -262,7 +262,7 @@ export default function GlobalLeaderboard() {
             <div className="bg-white/[0.03] border border-white/5 p-4 rounded-[24px] text-center">
                 <Users size={14} className="mx-auto mb-2 text-indigo-500" />
                 <p className="text-lg font-black italic leading-none">{totalNetworkUsers.toLocaleString()}</p>
-                <p className="text-[7px] font-black text-zinc-600 uppercase mt-1">Total Agents</p>
+                <p className="text-[7px] font-black text-zinc-500 uppercase mt-1">Total Agents</p>
             </div>
             <div className="bg-indigo-500/10 border border-indigo-500/20 p-4 rounded-[24px] text-center">
                 <Clock size={14} className="mx-auto mb-2 text-indigo-400" />
@@ -272,14 +272,14 @@ export default function GlobalLeaderboard() {
             <div className="bg-white/[0.03] border border-white/5 p-4 rounded-[24px] text-center">
                 <Star size={14} className="mx-auto mb-2 text-yellow-500" />
                 <p className="text-lg font-black italic leading-none">#{myRank || '--'}</p>
-                <p className="text-[7px] font-black text-zinc-600 uppercase mt-1">Your Rank</p>
+                <p className="text-[7px] font-black text-zinc-500 uppercase mt-1">Your Rank</p>
             </div>
         </div>
 
         {/* Search & Tabs */}
         <div className="space-y-3 mb-10">
             <div className="relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-indigo-400" size={16} />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-indigo-400" size={16} />
                 <input 
                     type="text" placeholder="Search Agents or Milestones (e.g. Oracle)..." value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -289,7 +289,7 @@ export default function GlobalLeaderboard() {
             <div className="flex bg-white/5 p-1.5 rounded-2xl border border-white/10">
                 {['season', 'all-time'].map((t) => (
                     <button key={t} onClick={() => { setActiveTab(t as any); setLoading(true); }}
-                        className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase transition-all ${activeTab === t ? 'bg-indigo-600 shadow-xl text-white' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                        className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase transition-all ${activeTab === t ? 'bg-indigo-600 shadow-xl text-white' : 'text-zinc-400 hover:text-zinc-300'}`}>
                         {t === 'season' ? 'Current Season' : 'Hall of Fame'}
                     </button>
                 ))}
@@ -314,7 +314,7 @@ export default function GlobalLeaderboard() {
                     
                     <div className={`relative ${isChamp ? 'bg-indigo-600/10 border-indigo-500/40 pt-16' : 'bg-zinc-900/50 border-white/5 pt-12'} border-x border-t rounded-t-[40px] p-4 text-center transition-transform active:scale-95`}>
                         <div className={`absolute ${isChamp ? '-top-14 w-24 h-24' : '-top-10 w-16 h-16'} left-1/2 -translate-x-1/2 bg-zinc-800 rounded-3xl border-4 border-[#020202] flex items-center justify-center shadow-2xl`}>
-                            {isChamp ? <Crown size={40} className="text-yellow-500" /> : <User size={28} className="text-zinc-500" />}
+                            {isChamp ? <Crown size={40} className="text-yellow-500" /> : <User size={28} className="text-zinc-400" />}
                             <div className={`absolute -bottom-2 ${isChamp ? 'bg-yellow-500 px-4' : 'bg-zinc-500 px-2'} text-black text-[10px] font-black rounded-full ring-4 ring-[#020202]`}>
                                 {idx + 1}
                             </div>
@@ -330,7 +330,7 @@ export default function GlobalLeaderboard() {
                                 <Heart size={10} fill="currentColor" />
                                 <span className="text-[10px] font-black">{artist.totalLikes.toLocaleString()}</span>
                             </div>
-                            <p className="text-[7px] font-bold text-zinc-500 uppercase tracking-tighter">LVL {lvl.level}</p>
+                            <p className="text-[7px] font-bold text-zinc-400 uppercase tracking-tighter">LVL {lvl.level}</p>
                         </div>
                     </div>
                 </div>
@@ -363,7 +363,7 @@ export default function GlobalLeaderboard() {
                     <div className="w-8 text-center font-black italic text-zinc-700 text-xs">#{pos}</div>
                     
                     <div className="relative w-12 h-12 shrink-0 bg-zinc-800 rounded-2xl flex items-center justify-center border border-white/10">
-                       <User size={22} className="text-zinc-600" />
+                       <User size={22} className="text-zinc-500" />
                        {artist.isVerified && <ShieldCheck size={14} className="absolute -top-1.5 -right-1.5 text-cyan-400 fill-black" />}
                     </div>
 
@@ -376,7 +376,7 @@ export default function GlobalLeaderboard() {
                           <span className={`flex items-center gap-1 text-[7px] font-black uppercase px-2 py-0.5 rounded-md ${mile.bg} ${mile.color}`}>
                               {mile.icon} {mile.name}
                           </span>
-                          <span className="text-[7px] text-zinc-500 font-bold uppercase">Lvl {lvl.level}</span>
+                          <span className="text-[7px] text-zinc-400 font-bold uppercase">Lvl {lvl.level}</span>
                       </div>
                     </div>
 
@@ -396,7 +396,7 @@ export default function GlobalLeaderboard() {
               {hasMore && (
                 <button onClick={loadMore} disabled={loadingMore} className="w-full py-10 flex flex-col items-center gap-2 group transition-all">
                   {loadingMore ? <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /> : 
-                  <><ChevronDown size={24} className="text-zinc-600 group-hover:text-white transition-colors" /><span className="text-[9px] font-black uppercase tracking-[0.4em] text-zinc-600">Sync More Data</span></>}
+                  <><ChevronDown size={24} className="text-zinc-500 group-hover:text-white transition-colors" /><span className="text-[9px] font-black uppercase tracking-[0.4em] text-zinc-500">Sync More Data</span></>}
                 </button>
               )}
             </>
@@ -454,7 +454,7 @@ export default function GlobalLeaderboard() {
                           LVL {lvlInfo.level}
                         </p>
                         <div className="w-1 h-1 bg-zinc-700 rounded-full" />
-                        <p className="text-[8px] font-black text-zinc-500 uppercase tracking-tighter">
+                        <p className="text-[8px] font-black text-zinc-400 uppercase tracking-tighter">
                           {lvlInfo.next.toLocaleString()} pts to level up
                         </p>
                       </div>

@@ -390,7 +390,6 @@ export default function AIStudio() {
   };
 
   const downloadImage = async (imgUrl: string) => {
-    // 1. Immediately show intent (even if it takes 100ms, UI feels responsive)
     setLoading(true);
 
     try {
@@ -398,11 +397,7 @@ export default function AIStudio() {
       const ctx = canvas.getContext("2d");
       const img = new Image();
 
-      // Use anonymous to avoid CORS canvas "tainting"
       img.crossOrigin = "anonymous";
-      
-      // Adding the timestamp is good for fresh generations, 
-      // but ensure your storage (S3/Firebase) allows CORS
       img.src = imgUrl; 
 
       img.onload = () => {
@@ -412,19 +407,20 @@ export default function AIStudio() {
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
 
-        // --- Watermark Logic ---
-        const fontSize = Math.floor(canvas.width * 0.035);
+        // --- Standardized Watermark Logic ---
+        const fontSize = Math.floor(canvas.width * 0.04); // Changed to 0.04 for consistency
         ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.textAlign = "right";
-        ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+        ctx.textBaseline = "bottom"; // Added for precise corner alignment
+        ctx.fillStyle = "rgba(255, 255, 255, 0.5)"; // Matches 0.5 opacity
         ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
         ctx.shadowBlur = 10;
         
-        ctx.fillText("IMAGYNEX AI", canvas.width - 20, canvas.height - 20);
+        // Matches "Imagynex.AI" casing and 20px padding
+        ctx.fillText("Imagynex.AI", canvas.width - 20, canvas.height - 20);
 
         // --- Instant Trigger ---
         const link = document.createElement('a');
-        // Using 'image/png' is sometimes faster for canvas than 'jpeg' encoding
         link.href = canvas.toDataURL("image/png");
         link.download = `Imagynex-${Date.now()}.png`;
         link.click();
@@ -433,17 +429,12 @@ export default function AIStudio() {
       };
 
       img.onerror = () => {
-        throw new Error("Direct draw failed");
+        setLoading(false);
+        console.error("Image load failed");
       };
 
     } catch (err) {
-      console.error("Fast download failed, trying fallback", err);
-      // Fallback if canvas is blocked
-      const link = document.createElement('a');
-      link.href = imgUrl;
-      link.target = "_blank";
-      link.download = "Imagynex-Art.jpg";
-      link.click();
+      console.error("Download failed", err);
       setLoading(false);
     }
   };
@@ -877,7 +868,7 @@ export default function AIStudio() {
               <div className="mt-3">
                 <button 
                   onClick={() => setError(null)}
-                  className="text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-white transition cursor-pointer"
+                  className="text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white transition cursor-pointer"
                 >
                   Dismiss
                 </button>
@@ -937,7 +928,7 @@ export default function AIStudio() {
         <div className="flex flex-col gap-6 max-w-5xl mx-auto">
           <div className="bg-zinc-900/40 border border-white/10 p-5 md:p-8 rounded-[24px] md:rounded-[48px] backdrop-blur-3xl shadow-2xl space-y-6">
             <div className="space-y-3">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Art Style</label>
+              <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest px-1">Art Style</label>
               <div className="flex gap-2 overflow-x-auto pb-3 no-scrollbar scroll-smooth snap-x">
                 {styles.map((s) => (
                   <button 
@@ -957,7 +948,7 @@ export default function AIStudio() {
 
             <div className="space-y-3">
               <div className="flex justify-between items-center px-1">
-                <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Input Prompt</label>
+                <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Input Prompt</label>
                 
                 <div className="flex gap-3 md:gap-4">
                   {/* 1. Magic Button */}
@@ -1004,7 +995,8 @@ export default function AIStudio() {
             <div className="space-y-4">
               <button 
                 onClick={() => setShowAdvanced(!showAdvanced)} 
-                className="flex items-center gap-2 text-[10px] font-black text-zinc-500 hover:text-indigo-400 transition-colors uppercase tracking-widest px-1"
+                aria-label="Configure Neural Parameters"
+                className="flex items-center gap-2 text-[10px] font-black text-zinc-400 hover:text-indigo-400 transition-colors uppercase tracking-widest px-1"
               >
                 <Sliders size={12} className={showAdvanced ? "text-indigo-500" : ""} /> 
                 {showAdvanced ? "Collapse" : "Configure"} Neural Parameters
@@ -1015,7 +1007,7 @@ export default function AIStudio() {
                   
                   {/* 1. Negative Prompt */}
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-zinc-600 uppercase flex items-center justify-between px-1">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase flex items-center justify-between px-1">
                       <span className="flex items-center gap-1"><Ban size={10} /> Negative Elements</span>
                       {negativePrompt && (
                         <button 
@@ -1039,7 +1031,7 @@ export default function AIStudio() {
                   <div className="space-y-4">
                     {/* Seed Control */}
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase flex items-center justify-between px-1 tracking-widest">
+                      <label className="text-[10px] font-black text-zinc-400 uppercase flex items-center justify-between px-1 tracking-widest">
                         <span className="flex items-center gap-1.5"><Hash size={12} className="text-indigo-500" /> Seed Engine</span>
                         {seed && seed !== -1 && (
                           <button 
@@ -1068,7 +1060,7 @@ export default function AIStudio() {
                             const newSeed = Math.floor(Math.random() * 999999999);
                             setSeed(newSeed);
                           }}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-white/5 text-zinc-500 hover:text-indigo-400 hover:bg-white/10 transition-all"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-white/5 text-zinc-400 hover:text-indigo-400 hover:bg-white/10 transition-all"
                           title="Generate Random Seed"
                         >
                           <RefreshCw size={14} />
@@ -1090,7 +1082,7 @@ export default function AIStudio() {
                           <span className="text-xs font-bold text-white tracking-tight">
                             {isPublic ? "Public Synthesis" : "Ghost Mode (Private)"}
                           </span>
-                          <p className="text-[10px] text-zinc-500 leading-tight max-w-[180px]">
+                          <p className="text-[10px] text-zinc-400 leading-tight max-w-[180px]">
                             {isPublic 
                               ? "Results published to community gallery" 
                               : "Locally encrypted. No data sent to gallery."}
@@ -1126,7 +1118,7 @@ export default function AIStudio() {
                 
                 {/* 3. Neural Engine with Pro Badge */}
                 <div className="space-y-2">
-                  <label htmlFor="engine-select" className="text-[10px] font-black text-zinc-600 uppercase tracking-widest px-1 flex items-center">
+                  <label htmlFor="engine-select" className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1 flex items-center">
                     Neural Engine <ProBadge />
                   </label>
                   <div className="relative group">
@@ -1140,7 +1132,7 @@ export default function AIStudio() {
                         ZIMAGE (Ultra Detail & Realism)
                       </option>
                     </select>
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600 group-hover:text-white transition-colors">
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 group-hover:text-white transition-colors">
                       <ChevronDown size={14} />
                     </div>
                   </div>
@@ -1148,7 +1140,7 @@ export default function AIStudio() {
 
                 {/* 4. Canvas Ratio */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-600 uppercase tracking-widest px-1">Aspect Ratio</label>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Aspect Ratio</label>
                   <div className="flex gap-2">
                     {["1:1", "16:9", "9:16"].map(r => (
                       <button 
@@ -1157,7 +1149,7 @@ export default function AIStudio() {
                         className={`flex-1 p-3 rounded-xl text-[10px] font-black border transition-all duration-300 ${
                           ratio === r 
                           ? 'bg-white text-black border-white shadow-[0_10px_20px_rgba(255,255,255,0.1)]' 
-                          : 'bg-black/60 border-white/5 text-zinc-500 hover:border-white/20 hover:text-white'
+                          : 'bg-black/60 border-white/5 text-zinc-400 hover:border-white/20 hover:text-white'
                         }`}
                       >
                         {r}
@@ -1171,7 +1163,8 @@ export default function AIStudio() {
               <button 
                 onClick={() => generateImage()} 
                 disabled={loading || !prompt?.trim()} 
-                className="w-full relative group overflow-hidden bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-900 disabled:text-zinc-600 disabled:cursor-not-allowed text-white font-black py-6 rounded-2xl md:rounded-[32px] transition-all flex items-center justify-center gap-3 shadow-[0_20px_40px_rgba(79,70,229,0.2)] active:scale-[0.97] uppercase tracking-[0.25em] text-[11px]"
+                aria-label="Generate Image"
+                className="w-full relative group overflow-hidden bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-900 disabled:text-zinc-500 disabled:cursor-not-allowed text-white font-black py-6 rounded-2xl md:rounded-[32px] transition-all flex items-center justify-center gap-3 shadow-[0_20px_40px_rgba(79,70,229,0.2)] active:scale-[0.97] uppercase tracking-[0.25em] text-[11px]"
               >
                 {/* Shimmer Effect Layer */}
                 <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
@@ -1262,7 +1255,7 @@ export default function AIStudio() {
                   <div className="w-20 h-20 bg-indigo-500/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-indigo-500/10 animate-pulse">
                     <ImageIcon size={32} className="text-indigo-500/40" />
                   </div>
-                  <p className="text-zinc-500 font-black uppercase tracking-[0.3em] text-[10px]">
+                  <p className="text-zinc-400 font-black uppercase tracking-[0.3em] text-[10px]">
                     Awaiting Neural Input
                   </p>
                 </div>
@@ -1297,7 +1290,7 @@ export default function AIStudio() {
                     localDB.transaction("private_images", "readwrite").objectStore("private_images").clear();
                   }
                 }} 
-                className="text-[10px] font-black text-zinc-500 hover:text-red-400 transition uppercase"
+                className="text-[10px] font-black text-zinc-400 hover:text-red-400 transition uppercase"
               >
                 Clear Vault
               </button>
@@ -1359,7 +1352,7 @@ export default function AIStudio() {
             <div className="flex items-end justify-between mb-8 px-2">
               <div>
                 <h2 className="text-2xl md:text-3xl font-black tracking-tight uppercase italic">Live Feed</h2>
-                <p className="text-zinc-500 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Real-time syntheses from the cloud</p>
+                <p className="text-zinc-400 text-[9px] md:text-[10px] font-bold uppercase tracking-widest">Real-time syntheses from the cloud</p>
               </div>
               
               {/* Yeh Button Add Kiya Gaya Hai */}
@@ -1472,7 +1465,7 @@ export default function AIStudio() {
       <footer className="bg-black/60 border-t border-white/5 pt-16 md:pt-20 pb-44 px-5 text-center">
         <div className="max-w-4xl mx-auto space-y-12">
           {/* Background color slightly brightened for contrast */}
-          <div className="bg-zinc-900/80 border border-dashed border-white/10 rounded-[32px] p-8 md:p-12 text-zinc-500 text-[8px] md:text-[10px] font-black uppercase tracking-[0.4em]">
+          <div className="bg-zinc-900/80 border border-dashed border-white/10 rounded-[32px] p-8 md:p-12 text-zinc-400 text-[8px] md:text-[10px] font-black uppercase tracking-[0.4em]">
             Imagynex AI Neural Creative Suite
           </div>
           
@@ -1488,15 +1481,15 @@ export default function AIStudio() {
               {/* Changed h4 to h3 or kept same but ensured order in page is correct */}
               <h4 className="text-[10px] font-black text-white uppercase tracking-widest">Platform</h4>
               <ul className="text-zinc-400 text-[10px] space-y-3 font-bold uppercase tracking-wider">
-                  <li><Link href="/privacy" className="hover:text-indigo-400 py-1 inline-block">Privacy</Link></li>
-                  <li><Link href="/about" className="hover:text-indigo-400 py-1 inline-block">About</Link></li>
+                  <li><Link href="/privacy" className="hover:text-indigo-400 py-2 inline-block">Privacy</Link></li>
+                  <li><Link href="/about" className="hover:text-indigo-400 py-2 inline-block">About</Link></li>
               </ul>
             </div>
             
             <div className="space-y-3">
               <h4 className="text-[10px] font-black text-white uppercase tracking-widest">Connect</h4>
               <ul className="text-zinc-400 text-[10px] space-y-3 font-bold uppercase tracking-wider">
-                  <li><Link href="https://github.com/aggarwalh905-ops" className="hover:text-indigo-400 py-1 inline-block">GitHub</Link></li>
+                  <li><Link href="https://github.com/aggarwalh905-ops" className="hover:text-indigo-400 py-2 inline-block">GitHub</Link></li>
               </ul>
             </div>
           </div>
@@ -1522,7 +1515,7 @@ export default function AIStudio() {
           </div>
           <div className="flex flex-col">
             <span className="text-[10px] font-black uppercase tracking-widest text-white">Vault Synced</span>
-            <span className="text-[8px] font-bold uppercase tracking-tight text-zinc-500">Image Saved & Link Copied</span>
+            <span className="text-[8px] font-bold uppercase tracking-tight text-zinc-400">Image Saved & Link Copied</span>
           </div>
         </div>
       </div>
@@ -1546,7 +1539,7 @@ export default function AIStudio() {
               SYSTEM INITIALIZED
             </h2>
             
-            <p className="text-zinc-500 text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] leading-relaxed mb-8">
+            <p className="text-zinc-400 text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] leading-relaxed mb-8">
               Welcome to Neural Engine v2.0. <br/> 
               Deep learning models upgraded. <br/>
               Latency reduced by 40%. <br/>

@@ -4,6 +4,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { ChevronLeft, Download, Sparkles, Lock } from "lucide-react";
 import ShareAction from "@/lib/ShareAction";
+import DownloadButton from "@/lib/DownloadButton";
 
 // 1. Metadata Logic
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -50,7 +51,7 @@ export default async function ImagePage({ params }: { params: Promise<{ id: stri
           <Lock className="text-indigo-500" size={32} />
         </div>
         <h2 className="text-2xl font-black uppercase tracking-widest mb-2">This Art is Private</h2>
-        <p className="text-zinc-500 max-w-md mb-8">
+        <p className="text-zinc-400 max-w-md mb-8">
           The creator has restricted access to this masterpiece. You can explore other public artworks in our gallery.
         </p>
         <Link 
@@ -110,16 +111,19 @@ export default async function ImagePage({ params }: { params: Promise<{ id: stri
                  {data.creatorName?.charAt(0) || 'A'}
                </div>
                <div>
-                 <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-0.5">Artist</p>
+                 <p className="text-[10px] text-zinc-400 uppercase font-black tracking-widest mb-0.5">Artist</p>
                  <p className="text-sm font-bold text-white tracking-wide">{data.creatorName || 'Anonymous'}</p>
                </div>
             </div>
 
             <div className="flex gap-4">
-               <a href={data.imageUrl} download="imagynex-art.png" className="flex-[2] bg-white text-black py-5 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-zinc-200 transition-all active:scale-95 shadow-xl shadow-white/5">
-                 <Download size={18} /> Download Art
-               </a>
-               <ShareAction imageUrl={data.imageUrl} prompt={data.prompt} />
+              {/* Replace the old <a> tag with this */}
+              <DownloadButton 
+                imageUrl={data.imageUrl} 
+                watermarkText="Imagynex.AI" 
+              />
+              
+              <ShareAction imageUrl={data.imageUrl} prompt={data.prompt} />
             </div>
           </div>
         </div>

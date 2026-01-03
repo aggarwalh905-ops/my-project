@@ -57,7 +57,7 @@ export default function Contact() {
             <h1 className="text-5xl md:text-7xl font-black tracking-tighter italic uppercase leading-[0.9]">
               Connect With <br /><span className="text-indigo-500">Our Team.</span>
             </h1>
-            <p className="text-zinc-500 text-lg max-w-md font-medium leading-relaxed">
+            <p className="text-zinc-400 text-lg max-w-md font-medium leading-relaxed">
               Have a question about our neural models or a suggestion to improve our engine? We are here to listen.
             </p>
           </div>
@@ -73,7 +73,7 @@ export default function Contact() {
                 </div>
                 <div className="space-y-2">
                   <h2 className="text-3xl font-black uppercase tracking-tighter">Transmission Received</h2>
-                  <p className="text-zinc-500 text-sm font-medium">Thank you for reaching out. Our team will review your message and respond shortly.</p>
+                  <p className="text-zinc-400 text-sm font-medium">Thank you for reaching out. Our team will review your message and respond shortly.</p>
                 </div>
                 <button onClick={() => setStatus("idle")} className="text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:text-white transition">
                   Send Another Inquiry
@@ -82,7 +82,7 @@ export default function Contact() {
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-600 ml-2">Full Name</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">Full Name</label>
                   <input 
                     required 
                     type="text" 
@@ -93,7 +93,7 @@ export default function Contact() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-600 ml-2">Email Address</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">Email Address</label>
                   <input 
                     required 
                     type="email" 
@@ -104,7 +104,7 @@ export default function Contact() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-600 ml-2">Message</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">Message</label>
                   <textarea 
                     required 
                     rows={4} 
