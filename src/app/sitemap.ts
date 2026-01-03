@@ -8,7 +8,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   
   try {
     const galleryRef = collection(db, "gallery");
-    // Is query ki wajah se Private images Sitemap mein kabhi nahi aayengi
     const q = query(
       galleryRef, 
       where("isPrivate", "==", false), 
@@ -18,18 +17,28 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const querySnapshot = await getDocs(q);
     
-    imageEntries = querySnapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        url: `${baseUrl}/gallery/${doc.id}`, 
-        lastModified: data.createdAt?.toDate() || new Date(),
-        changeFrequency: 'weekly' as const,
-        priority: 0.6,
-        images: [data.imageUrl], 
-      };
-    });
+    imageEntries = querySnapshot.docs
+      .map((doc) => {
+        const data = doc.data();
+        
+        // Safety Check: Agar imageUrl nahi hai toh skip karein
+        if (!data.imageUrl) return null;
+
+        // XML Safe URL conversion (Google characters like & ko handle karne ke liye)
+        const safeImageUrl = data.imageUrl.replace(/&/g, '&amp;');
+
+        return {
+          url: `${baseUrl}/gallery/${doc.id}`, 
+          lastModified: data.createdAt?.toDate() || new Date(),
+          changeFrequency: 'weekly' as const,
+          priority: 0.6,
+          images: [safeImageUrl], // Safe URL use karein
+        };
+      })
+      .filter((entry): entry is any => entry !== null); // Null entries remove karein
+
   } catch (error) {
-    console.error("Sitemap Image Fetch Error:", error);
+    console.error("Sitemap Fetch Error:", error);
     imageEntries = [];
   }
 
