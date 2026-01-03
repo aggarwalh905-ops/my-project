@@ -17,25 +17,29 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const querySnapshot = await getDocs(q);
     
-    imageEntries = querySnapshot.docs
-      .map((doc) => {
-        const data = doc.data();
-        
-        // Safety Check: Agar imageUrl nahi hai toh skip karein
-        if (!data.imageUrl) return null;
+    imageEntries = querySnapshot.docs.map((doc) => {
+      const data = doc.data();
+      
+      if (!data.imageUrl) return null;
 
-        // XML Safe URL conversion (Google characters like & ko handle karne ke liye)
-        const safeImageUrl = data.imageUrl.replace(/&/g, '&amp;');
+      // FIX 1: Ensure Absolute URL (Relative path ko full URL banayein)
+      let fullImageUrl = data.imageUrl;
+      if (fullImageUrl.startsWith('/')) {
+        fullImageUrl = `${baseUrl}${fullImageUrl}`;
+      }
 
-        return {
-          url: `${baseUrl}/gallery/${doc.id}`, 
-          lastModified: data.createdAt?.toDate() || new Date(),
-          changeFrequency: 'weekly' as const,
-          priority: 0.6,
-          images: [safeImageUrl], // Safe URL use karein
-        };
-      })
-      .filter((entry): entry is any => entry !== null); // Null entries remove karein
+      // FIX 2: Escape Special Characters properly
+      // XML mein '&' allow nahi hota, use '&amp;' banana padta hai
+      const safeImageUrl = fullImageUrl.replace(/&/g, '&amp;');
+
+      return {
+        url: `${baseUrl}/gallery/${doc.id}`, 
+        lastModified: data.createdAt?.toDate() || new Date(),
+        changeFrequency: 'weekly' as const,
+        priority: 0.6,
+        images: [safeImageUrl], 
+      };
+    }).filter((entry): entry is any => entry !== null);
 
   } catch (error) {
     console.error("Sitemap Fetch Error:", error);
