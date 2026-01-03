@@ -22,22 +22,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       
       if (!data.imageUrl) return null;
 
-      // FIX 1: Ensure Absolute URL (Relative path ko full URL banayein)
-      let fullImageUrl = data.imageUrl;
-      if (fullImageUrl.startsWith('/')) {
-        fullImageUrl = `${baseUrl}${fullImageUrl}`;
+      // 1. Full URL banayein (Absolute Path)
+      let fullUrl = data.imageUrl;
+      if (fullUrl.startsWith('/')) {
+        fullUrl = `${baseUrl}${fullUrl}`;
       }
 
-      // FIX 2: Escape Special Characters properly
-      // XML mein '&' allow nahi hota, use '&amp;' banana padta hai
-      const safeImageUrl = fullImageUrl.replace(/&/g, '&amp;');
+      // 2. XML SAFE CONVERSION (IMPORTANT)
+      // Sabhi '&' ko '&amp;' se replace karna zaroori hai warna XML break ho jayega
+      const safeImageUrl = fullUrl.replace(/&/g, '&amp;');
 
       return {
         url: `${baseUrl}/gallery/${doc.id}`, 
         lastModified: data.createdAt?.toDate() || new Date(),
         changeFrequency: 'weekly' as const,
         priority: 0.6,
-        images: [safeImageUrl], 
+        images: [safeImageUrl], // Yahan safe image URL jayega
       };
     }).filter((entry): entry is any => entry !== null);
 
