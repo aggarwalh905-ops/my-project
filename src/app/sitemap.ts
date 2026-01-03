@@ -19,32 +19,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     
     imageEntries = querySnapshot.docs.map((doc) => {
       const data = doc.data();
-      if (!data.imageUrl) return null;
-
-      // 1. Full URL banayein
-      let fullUrl = data.imageUrl;
-      if (fullUrl.startsWith('/')) {
-        fullUrl = `${baseUrl}${fullUrl}`;
-      }
-
-      // 2. ULTRA SAFE ENCODING
-      // Pehle URL ko decode karein (agar pehle se encoded hai) phir sahi se encode karein
-      // Isse saare special characters XML-friendly ban jayenge
-      const encodedUrl = fullUrl
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
-
+      
       return {
         url: `${baseUrl}/gallery/${doc.id}`, 
         lastModified: data.createdAt?.toDate() || new Date(),
         changeFrequency: 'weekly' as const,
-        priority: 0.6,
-        images: [encodedUrl], 
+        priority: 0.7,
       };
-    }).filter((entry): entry is any => entry !== null);
+    });
 
   } catch (error) {
     console.error("Sitemap Fetch Error:", error);
