@@ -6,7 +6,12 @@ const nextConfig: NextConfig = {
   
   /* Images ko GitHub Pages par chalane ke liye (Next.js Image Optimization server maangta hai) */
   images: {
-    unoptimized: true,
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'pollinations.ai',
+      },
+    ],
   },
 
   /* Aapka existing compiler option */

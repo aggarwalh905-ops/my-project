@@ -597,8 +597,25 @@ function GalleryContent() {
     }
   };
 
+  // GalleryContent function ke return ke andar, sabse upar:
+  const jsonLd = {
+    "@context": "https://schema.org/",
+    "@type": "ImageGallery",
+    "name": "Imagynex AI Neural Art Gallery",
+    "description": "Explore top-tier AI generated images, prompts, and neural art masterpieces.",
+    "url": "https://imagynexai.vercel.app/gallery",
+    "image": images.slice(0, 5).map(img => img.imageUrl) // Top 5 images ko schema mein dalna
+  };
+
   return (
     <div className="min-h-screen bg-[#020202] text-white selection:bg-indigo-500/30 font-sans">
+      
+      {/* JSON-LD Script for Google SEO */}
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+    />
+
       {/* Mobile Back Header Overlay */}
       {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('user') && (
         <div className="max-w-7xl mx-auto px-4 mb-2 pt-4">
@@ -917,13 +934,39 @@ function GalleryContent() {
                     <div className="absolute inset-0 bg-gradient-to-tr from-yellow-500/10 to-transparent pointer-events-none z-10 animate-pulse" />
                   )}
 
-                  {/* Main Image */}
-                  <img
-                    src={img.imageUrl}
-                    className="w-full h-full object-cover transition-transform duration-[1s] group-hover:scale-105"
-                    loading="lazy"
-                    alt={img.prompt}
-                  />
+                  {/* --- LINK START: Image aur Overlay ko wrap karein --- */}
+                  <Link href={`/gallery/${img.id}`} className="block w-full h-full cursor-zoom-in">
+                    {/* 1. Main Image */}
+                    <img
+                      src={img.imageUrl}
+                      alt={`${img.prompt} - AI Image by Imagynex`} 
+                      title={`${img.prompt} | Imagynex AI Studio`}
+                      className="w-full h-full object-cover transition-transform duration-[1s] group-hover:scale-110"
+                      loading="lazy"
+                      crossOrigin="anonymous"
+                    />
+
+                    {/* 2. SEO Prompt Overlay */}
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-500 z-10 flex flex-col items-center justify-center p-8 backdrop-blur-[2px]">
+                      <p className="text-[11px] md:text-xs text-white/90 font-medium italic text-center line-clamp-4 mb-4 leading-relaxed">
+                        "{img.prompt}"
+                      </p>
+                      
+                      {/* Note: Is button par click karne se link trigger na ho isliye e.stopPropagation() zaroori hai */}
+                      <button 
+                        onClick={(e) => {
+                          e.preventDefault(); // Link trigger hone se rokein
+                          e.stopPropagation(); // Parent click event ko rokein
+                          navigator.clipboard.writeText(img.prompt);
+                          alert("Prompt copied!");
+                        }}
+                        className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2"
+                      >
+                        <Edit3 size={12} /> Copy Prompt
+                      </button>
+                    </div>
+                  </Link>
+                  {/* --- LINK END --- */}
 
                   {/* TOP UI LAYER */}
                   <div className="absolute top-4 inset-x-4 flex justify-between items-start z-30">

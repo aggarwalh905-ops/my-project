@@ -4,9 +4,8 @@ import { Analytics } from "@vercel/analytics/react";
 import { GoogleAnalytics } from '@next/third-parties/google';
 import Script from 'next/script';
 
-const baseUrl = "https://imagynex-ai.vercel.app";
+const baseUrl = "https://imagynexai.vercel.app";
 
-// Viewport must be exported separately in newer Next.js versions
 export const viewport: Viewport = {
   themeColor: "#020202",
   width: "device-width",
@@ -15,43 +14,57 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Imagynex AI | Neural Image Studio",
-  description: "Next-generation AI image generation powered by the Imagynex Neural Engine. Imagine anything, create masterpieces instantly.",
-  keywords: ["AI Image Generator", "Neural Art", "Imagynex", "FLUX AI", "Digital Art Studio", "AI Remix"],
+  // SEO Update: Main keyword ko title ke shuruat mein rakha hai
+  title: "AI Image Generator | Free Neural Art Studio - Imagynex AI",
+  description: "Create stunning AI images for free with Imagynex AI. The best neural engine for flux AI art, image remixing, and instant digital masterpieces. Imagine and generate now!",
+  keywords: [
+    "AI Image Generator", 
+    "Free AI Image Generator", 
+    "Neural Art Studio", 
+    "Flux AI Online", 
+    "Text to Image AI", 
+    "AI Art Creator", 
+    "Imagynex AI",
+    "Best AI Art Generator"
+  ],
   authors: [{ name: "Imagynex AI Team" }],
-  metadataBase: new URL(baseUrl), // Helpful for resolving relative paths automatically
+  metadataBase: new URL(baseUrl), 
   
-  // Open Graph (Facebook, WhatsApp, LinkedIn)
   openGraph: {
-    title: "Imagynex AI | Neural Image Studio",
-    description: "The intersection of human creativity and machine intelligence. Imagine. Generate. Remix.",
+    // Social media par clicks badhane ke liye title change kiya
+    title: "Free AI Image Generator | Create Neural Art with Imagynex AI",
+    description: "Generate high-quality AI art instantly. The intersection of human creativity and machine intelligence. Imagine. Generate. Remix.",
     url: baseUrl,
     siteName: "Imagynex AI",
     images: [
       {
-        url: "/og-image.jpg", // MetadataBase helps resolve this to absolute URL
+        url: "/og-image.jpg",
         width: 1200,
         height: 630,
-        alt: "Imagynex AI - Create Art with Neural Engine",
+        alt: "Imagynex AI Generator Preview",
       },
     ],
     locale: "en_US",
     type: "website",
   },
 
-  // Twitter (X)
   twitter: {
     card: "summary_large_image",
-    title: "Imagynex AI | Neural Image Studio",
-    description: "Create anything you can imagine with our Neural Engine.",
+    title: "Best AI Image Generator | Imagynex AI",
+    description: "Create anything you can imagine with our Neural Engine. Fast, free, and high-quality AI art.",
     images: ["/og-image.jpg"],
-    creator: "@ImagynexAI", // Agar aapka twitter handle hai toh yahan badal dein
+    creator: "@ImagynexAI",
   },
 
-  // Search Engine & Icons
   robots: {
     index: true,
     follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large', // Google Search mein badi image dikhegi
+      'max-snippet': -1,
+    },
   },
   icons: {
     icon: "/favicon.ico",
@@ -68,7 +81,6 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
-        {/* Puter.js integration */}
         <Script 
           src="https://js.puter.com/v2/" 
           strategy="beforeInteractive" 
