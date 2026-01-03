@@ -33,6 +33,8 @@ export default function GlobalLeaderboard() {
   const [myId, setMyId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showInfo, setShowInfo] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
 
   // Global Stats
   const [totalNetworkUsers, setTotalNetworkUsers] = useState(0);
@@ -149,6 +151,41 @@ export default function GlobalLeaderboard() {
 
   const topThree = filteredArtists.slice(0, 3);
   const theRest = filteredArtists.slice(3);
+
+  const handleShare = async () => {
+    if (!myData) return;
+
+    const milestone = getMilestone(myData.totalLikes, myData.totalCreations);
+    const profileUrl = `${window.location.origin}/gallery?user=${myId}`;
+    
+    // This is what appears as the "Headline" in the share preview
+    const shareTitle = `🏆 I'm Ranked #${myRank} on Imagynex!`;
+    
+    // This is the body text
+    const shareText = 
+      `Level ${getLevelInfo(myData.totalLikes).level} Artist | Class: ${milestone.name}\n` +
+      `Check out my Neural Engine creations here:`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: shareTitle, // Social apps prioritize this as the bold header
+          text: shareText,
+          url: profileUrl,
+        });
+      } else {
+        // Fallback for desktop: Copy clean link
+        const fullCopy = `${shareTitle}\n${shareText}\n${profileUrl}`;
+        await navigator.clipboard.writeText(fullCopy);
+        
+        setToastMsg("Neural Link Copied to Clipboard");
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name !== 'AbortError') console.error(err);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#020202] text-white pb-44 font-sans selection:bg-indigo-500/30 overflow-x-hidden">
@@ -438,7 +475,10 @@ export default function GlobalLeaderboard() {
                 </div>
 
                 <div className="flex gap-2">
-                  <button className="w-11 h-11 flex items-center justify-center bg-white/5 rounded-2xl border border-white/10 active:scale-90 transition-all hover:bg-white/10">
+                  <button 
+                    onClick={handleShare} // <--- Add this
+                    className="w-11 h-11 flex items-center justify-center bg-white/5 rounded-2xl border border-white/10 active:scale-90 transition-all hover:bg-white/10"
+                  >
                     <Share2 size={18} />
                   </button>
                   <button onClick={() => router.push(`/gallery?user=${myId}`)}
@@ -451,6 +491,25 @@ export default function GlobalLeaderboard() {
           </div>
         );
       })()}
+
+      {/* Custom Animated Toast */}
+      <AnimatePresence>
+        {showToast && (
+          <motion.div
+            initial={{ y: 50, opacity: 0, x: '-50%' }}
+            animate={{ y: 0, opacity: 1, x: '-50%' }}
+            exit={{ y: 20, opacity: 0, x: '-50%' }}
+            className="fixed bottom-32 left-1/2 z-[200] px-6 py-3 bg-indigo-600 border border-indigo-400/50 rounded-2xl shadow-[0_0_30px_rgba(79,70,229,0.4)] flex items-center gap-3 min-w-[280px]"
+          >
+            <div className="bg-white/20 p-1.5 rounded-lg">
+              <Zap size={16} className="text-white animate-pulse" />
+            </div>
+            <p className="text-[11px] font-black uppercase tracking-wider text-white">
+              {toastMsg}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -352,7 +352,8 @@ export default function AIStudio() {
       const systemInstruction = "Master AI Artist. Rewrite the user prompt into a high-detail cinematic masterpiece. Add specific lighting (e.g. volumetric, 8k), camera lens (e.g. 35mm), and textures. Keep it under 60 words. Return ONLY the prompt.";
       const encodedPrompt = encodeURIComponent(`${systemInstruction} \n\nUser Prompt: ${prompt}`);
       
-      const response = await fetch(`https://text.pollinations.ai/${encodedPrompt}`);
+      // NEW WAY
+      const response = await fetch(`https://enter.pollinations.ai/prompt/${encodeURIComponent(encodedPrompt)}`);
       let data = await response.text();
       
       // Cleaning: Agar AI phir bhi quotes ya "Prompt:" likh de toh use remove karne ke liye
@@ -451,53 +452,94 @@ export default function AIStudio() {
     if (!image) return;
     setLoading(true);
 
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = image;
+    try {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      const img = new Image();
+      
+      // Critical for cloud-hosted images to avoid CORS errors
+      img.crossOrigin = "anonymous"; 
+      img.src = image;
 
-    img.onload = () => {
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => {
+          setLoading(false);
+          setToast({ message: "Neural Link broken. Image could not be processed.", type: 'error' });
+          reject();
+        };
+      });
+
       if (!ctx) return;
+
+      // Set canvas dimensions to match image
       canvas.width = img.width;
       canvas.height = img.height;
+
+      // Draw original image
       ctx.drawImage(img, 0, 0);
 
-      // 10/10 Watermark Logic: Added Shadow for visibility on bright images
-      const fontSize = Math.floor(canvas.width * 0.03);
-      ctx.font = `black ${fontSize}px sans-serif`;
+      // --- High-End Watermark Logic ---
+      const fontSize = Math.floor(canvas.width * 0.025); // Dynamic sizing
       ctx.textAlign = "right";
       
-      // Subtle Shadow
-      ctx.shadowColor = "rgba(0,0,0,0.5)";
-      ctx.shadowBlur = 10;
-      ctx.fillStyle = "white";
-      ctx.fillText("IMAGYNEX NEURAL CORE", canvas.width - 40, canvas.height - 40);
+      // 1. Shadow for contrast against any background
+      ctx.shadowColor = "black";
+      ctx.shadowBlur = 15;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+      
+      // 2. Styling the text
+      ctx.font = `900 ${fontSize}px Inter, sans-serif`; // Use a bold font
+      ctx.fillStyle = "rgba(255, 255, 255, 0.85)"; // Slight transparency
+      
+      // 3. The Watermark Text
+      const padding = canvas.width * 0.03;
+      ctx.fillText("IMAGYNEX NEURAL CORE", canvas.width - padding, canvas.height - padding);
+      
+      // 4. Reset shadow so it doesn't affect other draws (important!)
+      ctx.shadowBlur = 0;
 
-      // Convert to blob at slightly higher quality (0.8) for the sweet spot
+      // Convert to blob and share
       canvas.toBlob(async (blob) => {
-        if (!blob) return setLoading(false);
+        if (!blob) {
+          setLoading(false);
+          return;
+        }
 
-        const file = new File([blob], "ImagynexArt.png", { type: "image/png" });
+        const file = new File([blob], "Imagynex-Masterpiece.png", { type: "image/png" });
         const shareData = {
-          title: 'Imagynex.AI Masterpiece',
-          text: `Synthesized with Imagynex Neural Engine: "${prompt}"`,
+          title: 'Imagynex Synthesis',
+          text: `Behold this creation: "${prompt}"`,
           files: [file],
         };
 
         try {
           if (navigator.canShare && navigator.canShare(shareData)) {
             await navigator.share(shareData);
+            setToast({ message: "Masterpiece transmitted!", type: 'success' });
           } else {
+            // Fallback if sharing is not supported on the device
             copyImageLinkFallback();
           }
-        } catch (err) {
-          // User cancelled share or error occurred
-          console.log("Share cancelled");
+        } catch (error) {
+          // 1. "AbortError" happens when the user simply closes the share menu (normal behavior)
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.log("Neural Link: User closed share menu.");
+          } else {
+            // 2. Real errors (permissions, file issues, etc.)
+            console.error("Neural Link Error:", error);
+            setToast({ message: "Transmission Interrupted", type: 'error' });
+          }
+        } finally {
+          setLoading(false); // Ensure loading stops regardless of result
         }
-        setLoading(false);
-      }, "image/png", 0.8);
-    };
+      }, "image/png", 0.9);
+
+    } catch (error) {
+      console.error("Neural Error during sharing:", error);
+      setLoading(false);
+    }
   };
 
   // Fallback function agar share support na ho
@@ -784,6 +826,38 @@ export default function AIStudio() {
     }
   };
 
+  const [loadingMessage, setLoadingMessage] = useState("Fire Neural Core");
+
+  useEffect(() => {
+    let interval = null;
+
+    if (loading) {
+      const messages = [
+        "Encoding Deep Architecture...",
+        "Synthesizing Neural Layers...",
+        "Optimizing Latent Space...",
+        "Rendering Manifestation...",
+        "Finalizing High-Z Detail..."
+      ];
+
+      // Set initial message immediately based on prompt length
+      setLoadingMessage(prompt?.length > 60 ? "Encoding Deep Architecture..." : "Synthesizing...");
+
+      let i = 0;
+      interval = setInterval(() => {
+        setLoadingMessage(messages[i]);
+        i = (i + 1) % messages.length;
+      }, 3000);
+    } else {
+      setLoadingMessage("Fire Neural Core");
+    }
+
+    // Proper Cleanup
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [loading]); // Only re-run when loading status flips
+
   return (
     <div className="min-h-screen bg-[#020202] text-zinc-100 font-sans selection:bg-indigo-600/50">
       {/* Error Toast Notification */}
@@ -894,7 +968,7 @@ export default function AIStudio() {
                     <span className="hidden xs:inline">Assistant</span>
                   </button>
 
-                  <button 
+                  {/* <button 
                     onClick={enhancePrompt} 
                     disabled={enhancing || !prompt}
                     className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-black text-indigo-400 uppercase hover:text-indigo-300 transition disabled:opacity-30"
@@ -905,7 +979,7 @@ export default function AIStudio() {
                       <Wand2 size={12} />
                     )}
                     <span className="hidden xs:inline">{enhancing ? "Refining..." : "Enhance"}</span>
-                  </button>
+                  </button> */}
 
                   {/* 3. Copy Button */}
                   <button onClick={handleCopy} disabled={!prompt} className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-black text-zinc-400 uppercase tracking-widest hover:text-white disabled:opacity-20 transition">
@@ -1098,17 +1172,16 @@ export default function AIStudio() {
                 <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
 
                 {/* Content */}
-                {/* Update the span inside your generate button */}
                 <div className="flex items-center justify-center gap-3 relative z-10">
                   {loading ? (
                     <Loader2 className="animate-spin text-white" size={20} />
                   ) : (
                     <Zap size={20} className="group-hover:scale-125 transition-transform" fill="currentColor" />
                   )}
-                  <span>
-                    {loading 
-                      ? (prompt.length > 60 ? "Encoding Deep Architecture..." : "Synthesizing...") 
-                      : "Fire Neural Core"}
+                  
+                  {/* Dynamic Loading Message from your useEffect */}
+                  <span className="transition-all duration-300">
+                    {loadingMessage}
                   </span>
                 </div>
               </button>
@@ -1148,7 +1221,7 @@ export default function AIStudio() {
                       <Download size={18}/> Download
                     </button>
                     
-                    <button 
+                    {/* <button 
                       onClick={shareProject}
                       disabled={!image || loading}
                       className={`w-full md:w-auto px-8 py-4 rounded-full font-black text-[10px] tracking-widest flex items-center justify-center gap-2 transition shadow-2xl uppercase ${
@@ -1163,7 +1236,7 @@ export default function AIStudio() {
                         <Share2 size={18} className="text-indigo-400" />
                       )}
                       {loading ? "Preparing File..." : "Share Masterpiece"}
-                    </button>
+                    </button> */}
 
                     <button 
                       onClick={() => generateImage(Math.floor(Math.random()*999999))} 
