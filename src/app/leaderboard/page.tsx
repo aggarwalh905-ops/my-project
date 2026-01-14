@@ -17,7 +17,7 @@ interface Artist {
   displayName: string;
   totalLikes: number;
   totalCreations: number;
-  weeklyLikes: number;
+  monthlyLikes: number; // Changed from weeklyLikes
   imagynex_uid?: string;
   isVerified?: boolean;
 }
@@ -83,9 +83,10 @@ export default function GlobalLeaderboard() {
     };
     fetchGlobalStats();
 
-    const sortField = activeTab === 'season' ? "weeklyLikes" : "totalLikes";
+    // Use monthlyLikes instead of weeklyLikes
+    const sortField = activeTab === 'season' ? "monthlyLikes" : "totalLikes";
     const q = query(collection(db, "users"), orderBy(sortField, "desc"), limit(PAGE_SIZE));
-
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Artist[];
       setArtists(fetched);
@@ -100,26 +101,23 @@ export default function GlobalLeaderboard() {
       }
     });
 
-    // Countdown Logic - Resets every Sunday at Midnight
+    // Countdown Logic - Resets on the 1st of every month
     const timer = setInterval(() => {
-        const today = new Date();
+        const now = new Date();
         
-        // Calculate next Sunday 00:00:00
-        const nextSun = new Date();
-        // (today.getDay() === 0 ? 7 : 7 - today.getDay()) ensures it always looks for the UPCOMING Sunday
-        nextSun.setDate(today.getDate() + (today.getDay() === 0 ? 7 : 7 - today.getDay()));
-        nextSun.setHours(0, 0, 0, 0); 
+        // Logic: Get the 1st day of the NEXT month at 00:00:00
+        const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0);
         
-        const diff = nextSun.getTime() - today.getTime();
+        const diff = nextMonth.getTime() - now.getTime();
         
         if (diff <= 0) {
-            setTimeLeft("SYNCING...");
+            setTimeLeft("RESETTING...");
         } else {
-            const d = Math.floor(diff / 86400000);
-            const h = Math.floor((diff / 3600000) % 24);
-            const m = Math.floor((diff / 60000) % 60);
+            const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
+            const m = Math.floor((diff / (1000 * 60)) % 60);
             
-            // Formatted for the modern UI
+            // Formatted for the UI
             setTimeLeft(`${d}D ${h}H ${m}M`);
         }
     }, 1000);
@@ -130,7 +128,9 @@ export default function GlobalLeaderboard() {
   const loadMore = async () => {
     if (!lastVisible || loadingMore) return;
     setLoadingMore(true);
-    const sortField = activeTab === 'season' ? "weeklyLikes" : "totalLikes";
+    // Update this line too
+    const sortField = activeTab === 'season' ? "monthlyLikes" : "totalLikes";
+    
     const nextQ = query(collection(db, "users"), orderBy(sortField, "desc"), startAfter(lastVisible), limit(PAGE_SIZE));
     const snapshot = await getDocs(nextQ);
     const newArtists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Artist[];
@@ -296,7 +296,7 @@ export default function GlobalLeaderboard() {
             </div>
         </div>
 
-        {/* Enhanced Podium (Shows level and milestone even in search) */}
+        {/* Enhanced Podium */}
         {topThree.length > 0 && (
           <div className="flex items-end justify-center gap-2 mb-12 mt-20 px-2">
             {[1, 0, 2].map((idx) => {
@@ -328,9 +328,14 @@ export default function GlobalLeaderboard() {
                             </span>
                             <div className="flex items-center gap-1 text-red-500 bg-black/40 px-2 py-1 rounded-lg border border-white/5">
                                 <Heart size={10} fill="currentColor" />
-                                <span className="text-[10px] font-black">{artist.totalLikes.toLocaleString()}</span>
+                                <span className="text-[10px] font-black">
+                                    {/* Podium: Show Season Likes in Season Tab */}
+                                    {(activeTab === 'season' ? (artist.monthlyLikes || 0) : artist.totalLikes).toLocaleString()}
+                                </span>
                             </div>
-                            <p className="text-[7px] font-bold text-zinc-400 uppercase tracking-tighter">LVL {lvl.level}</p>
+                            <p className="text-[7px] font-bold text-zinc-400 uppercase tracking-tighter">
+                                {activeTab === 'season' ? 'Season Progress' : `LVL ${lvl.level}`}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -363,8 +368,8 @@ export default function GlobalLeaderboard() {
                     <div className="w-8 text-center font-black italic text-zinc-700 text-xs">#{pos}</div>
                     
                     <div className="relative w-12 h-12 shrink-0 bg-zinc-800 rounded-2xl flex items-center justify-center border border-white/10">
-                       <User size={22} className="text-zinc-500" />
-                       {artist.isVerified && <ShieldCheck size={14} className="absolute -top-1.5 -right-1.5 text-cyan-400 fill-black" />}
+                        <User size={22} className="text-zinc-500" />
+                        {artist.isVerified && <ShieldCheck size={14} className="absolute -top-1.5 -right-1.5 text-cyan-400 fill-black" />}
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -381,13 +386,16 @@ export default function GlobalLeaderboard() {
                     </div>
 
                     <div className="text-right flex flex-col items-end">
-                        <div className="flex items-center gap-1.5">
-                            <Heart size={12} className="text-red-500 fill-red-500" />
-                            <span className="font-black text-sm tabular-nums">{(activeTab === 'season' ? artist.weeklyLikes : artist.totalLikes).toLocaleString()}</span>
-                        </div>
-                        <div className="w-12 h-1 bg-white/5 rounded-full mt-1.5 overflow-hidden">
-                            <div className="h-full bg-indigo-500" style={{ width: `${lvl.progress}%` }} />
-                        </div>
+                      <div className="flex items-center gap-1.5">
+                          <Heart size={12} className="text-red-500 fill-red-500" />
+                          <span className="font-black text-sm tabular-nums">
+                              {/* List: Show Season Likes in Season Tab */}
+                              {(activeTab === 'season' ? (artist.monthlyLikes || 0) : artist.totalLikes).toLocaleString()}
+                          </span>
+                      </div>
+                      <div className="w-12 h-1 bg-white/5 rounded-full mt-1.5 overflow-hidden">
+                          <div className="h-full bg-indigo-500" style={{ width: `${lvl.progress}%` }} />
+                      </div>
                     </div>
                   </motion.div>
                 );
@@ -404,20 +412,16 @@ export default function GlobalLeaderboard() {
         </div>
       </div>
 
-      {/* Persistent Me-Bar with Real-time Animated Progress */}
+      {/* Persistent Me-Bar */}
       {myData && (() => {
         const lvlInfo = getLevelInfo(myData.totalLikes);
         const currentMilestone = getMilestone(myData.totalLikes, myData.totalCreations);
-        
-        // Agla milestone dhoondne ke liye logic
         const nextMilestoneIndex = milestones.findIndex(m => m.name === currentMilestone.name) - 1;
         const nextMilestone = nextMilestoneIndex >= 0 ? milestones[nextMilestoneIndex] : null;
 
         return (
           <div className="fixed bottom-6 left-4 right-4 z-[100]">
             <div className="max-w-md mx-auto bg-zinc-900/95 backdrop-blur-3xl border border-white/10 rounded-[35px] shadow-2xl overflow-hidden">
-              
-              {/* Real-time Progress Animation (Level Progress) */}
               <div className="w-full h-1.5 bg-white/5 flex">
                 <motion.div 
                   initial={{ width: 0 }}
@@ -451,15 +455,16 @@ export default function GlobalLeaderboard() {
                     <div className="flex flex-col gap-0.5">
                       <div className="flex items-center gap-1.5">
                         <p className="text-[8px] font-black text-indigo-400 uppercase tracking-tighter">
-                          LVL {lvlInfo.level}
+                          {activeTab === 'season' ? 'Season Stats' : `LVL ${lvlInfo.level}`}
                         </p>
                         <div className="w-1 h-1 bg-zinc-700 rounded-full" />
                         <p className="text-[8px] font-black text-zinc-400 uppercase tracking-tighter">
-                          {lvlInfo.next.toLocaleString()} pts to level up
+                            {/* Me Bar: Real-time likes based on tab */}
+                            <Heart size={8} className="inline mr-1 text-red-500" fill="currentColor" />
+                            {(activeTab === 'season' ? (myData.monthlyLikes || 0) : myData.totalLikes).toLocaleString()}
                         </p>
                       </div>
 
-                      {/* Next Milestone Requirements */}
                       {nextMilestone && (
                         <div className="flex items-center gap-2 mt-0.5">
                           <p className="text-[7px] font-bold text-zinc-400 uppercase">
@@ -476,7 +481,7 @@ export default function GlobalLeaderboard() {
 
                 <div className="flex gap-2">
                   <button 
-                    onClick={handleShare} // <--- Add this
+                    onClick={handleShare}
                     className="w-11 h-11 flex items-center justify-center bg-white/5 rounded-2xl border border-white/10 active:scale-90 transition-all hover:bg-white/10"
                   >
                     <Share2 size={18} />

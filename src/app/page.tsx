@@ -720,7 +720,7 @@ export default function AIStudio() {
     const styleSuffix = styles.find(s => s.name === selectedStyle)?.suffix || "";
     const fullPrompt = `${prompt}${styleSuffix}`;
 
-    const proxyUrl = `/api/generate?prompt=${encodeURIComponent(fullPrompt)}&negative_prompt=${encodeURIComponent(negativePrompt || "")}&width=${w}&height=${h}&model=zimage&seed=${finalSeed}&nologo=true&enhance=true&t=${Date.now()}`;
+    const proxyUrl = `/api/generate?prompt=${encodeURIComponent(fullPrompt)}&negative_prompt=${encodeURIComponent(negativePrompt || "")}&width=${w}&height=${h}&model=${model}&seed=${finalSeed}&nologo=true&enhance=true&t=${Date.now()}`;
 
     try {
       const response = await fetch(proxyUrl);
@@ -745,7 +745,7 @@ export default function AIStudio() {
         prompt: fullPrompt,
         seed: finalSeed,
         ratio,
-        model: "zimage",
+        model: model,
         timestamp: Date.now(),
         firestoreId: null, // Default null
         isPrivate: !isPublic 
@@ -759,7 +759,7 @@ export default function AIStudio() {
           style: selectedStyle,
           seed: finalSeed,
           ratio: ratio,
-          model: "zimage",
+          model: model,
           createdAt: serverTimestamp(),
           creatorId: storedUid,
           creatorName: currentDisplayName,
@@ -821,33 +821,23 @@ export default function AIStudio() {
 
   useEffect(() => {
     let interval = null;
-
     if (loading) {
-      const messages = [
-        "Encoding Deep Architecture...",
-        "Synthesizing Neural Layers...",
-        "Optimizing Latent Space...",
-        "Rendering Manifestation...",
-        "Finalizing High-Z Detail..."
-      ];
+      const messages = model === "flux" 
+        ? ["Igniting Flux Core...", "Atmospheric Processing...", "Finalizing Render..."]
+        : ["Encoding Architecture...", "Synthesizing Layers...", "Finalizing Detail..."];
 
-      // Set initial message immediately based on prompt length
-      setLoadingMessage(prompt?.length > 60 ? "Encoding Deep Architecture..." : "Synthesizing...");
-
+      setLoadingMessage(messages[0]);
       let i = 0;
       interval = setInterval(() => {
         setLoadingMessage(messages[i]);
         i = (i + 1) % messages.length;
-      }, 3000);
+      }, 2500);
     } else {
       setLoadingMessage("Fire Neural Core");
     }
+    return () => { if (interval) clearInterval(interval); };
+  }, [loading, model]); // Model add karne se message badal jayenge
 
-    // Proper Cleanup
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [loading]); // Only re-run when loading status flips
 
   return (
     <div className="min-h-screen bg-[#020202] text-zinc-100 font-sans selection:bg-indigo-600/50">
@@ -1116,7 +1106,7 @@ export default function AIStudio() {
               {/* Flex Container for Engine and Ratio */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 
-                {/* 3. Neural Engine with Pro Badge */}
+                {/* --- Neural Engine Section --- */}
                 <div className="space-y-2">
                   <label htmlFor="engine-select" className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1 flex items-center">
                     Neural Engine <ProBadge />
@@ -1128,11 +1118,13 @@ export default function AIStudio() {
                       onChange={(e) => setModel(e.target.value)} 
                       className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm outline-none focus:border-indigo-500/50 text-white appearance-none cursor-pointer transition-all hover:bg-black/60"
                     >
-                      <option value="zimage" className="bg-zinc-900 text-white">
-                        ZIMAGE (Ultra Detail & Realism)
-                      </option>
+                      <option value="zimage">Z-IMAGE (Standard - Fast)</option>
+                      <option value="flux">FLUX SCHNELL (Cinematic - High Speed)</option>
+                      <option value="turbo">SDXL TURBO (Creative - Fast)</option>
+                      {/* Top users ke liye ya pro users ke liye aap konditional render kar sakte hain */}
+                      {/* <option value="seedream-pro">SEEDREAM PRO (Ultra Realistic)</option> */}
                     </select>
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 group-hover:text-white transition-colors">
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
                       <ChevronDown size={14} />
                     </div>
                   </div>

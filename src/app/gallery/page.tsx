@@ -12,6 +12,7 @@ import {
   Download, Search, Sparkles, Share2, ArrowLeft,
   User, Heart, Users, LayoutGrid, Trophy, Edit3, Check, Zap, Eye, Flame, Crown, Medal, TrendingUp, Gift, Info, Star, ShieldCheck, BadgeCheck, Lock, Globe
 } from 'lucide-react';
+import DownloadButton from "@/lib/DownloadButton";
 
 import { deleteDoc } from "firebase/firestore"; // Add this to your firestore imports
 import { Trash2 } from 'lucide-react'; // Add this to your lucide imports
@@ -34,11 +35,10 @@ interface ArtistProfile {
   displayName: string;
   totalCreations: number;
   totalLikes: number;
-  weeklyLikes: number; 
+  monthlyLikes: number; // New: Monthly tracker
   likedImages: string[];
-  lastReset?: any;
-  isSeasonWinner?: boolean;
-  isSecondPlace?: boolean;
+  lastMonthlyReset?: any; // New: Track month changes
+  // Remove weeklyLikes, isSeasonWinner, isSecondPlace
 }
 
 function GalleryContent() {
@@ -63,11 +63,11 @@ function GalleryContent() {
   const [myRank, setMyRank] = useState<number | string>("...");
   const [myGlobalRank, setMyGlobalRank] = useState<number | string>("...");
   const [timeLeft, setTimeLeft] = useState("");
+  const [myMonthlyRank, setMyMonthlyRank] = useState<number>(0);
+  const [monthlyLeaderboard, setMonthlyLeaderboard] = useState<ArtistProfile[]>([]);
 
   const now = new Date();
   const day = now.getDay();
-  const isMonday = day === 1;
-  const isTuesday = day === 2;
   const isSunday = day === 0;
 
   const categories = ["All", "Trending", "Liked", "Cinematic", "Anime", "Cyberpunk", "3D Render"];
@@ -159,6 +159,41 @@ function GalleryContent() {
     }
   };
 
+  const resetMonthlyLikes = async () => {
+    const now = new Date();
+    const currentDate = now.getDate(); // Mahine ki date (1-31)
+
+    // Logic: Sirf mahine ki 1st se 7th date tak allow karein
+    if (currentDate > 7) {
+      alert("ACCESS DENIED: Reset is only allowed during the first week of the month (1st - 7th).");
+      return;
+    }
+
+    const confirmReset = window.confirm("⚠️ DANGER: Reset ALL users' monthly likes to 0? This cannot be undone.");
+    if (!confirmReset) return;
+
+    try {
+      const usersRef = collection(db, "users");
+      const querySnapshot = await getDocs(usersRef);
+      const { writeBatch } = await import("firebase/firestore");
+      const batch = writeBatch(db);
+
+      querySnapshot.forEach((userDoc) => {
+        batch.update(userDoc.ref, { 
+          monthlyLikes: 0,
+          lastMonthlyReset: now 
+        });
+      });
+
+      await batch.commit();
+      alert("SUCCESS: All monthly likes have been reset to 0.");
+      fetchAdminStats();
+    } catch (err: any) {
+      console.error("Reset Error:", err);
+      alert("Reset failed: Permission Denied.");
+    }
+  };
+
   const togglePrivacy = async (e: React.MouseEvent, imgId: string, currentStatus: boolean) => {
     e.stopPropagation();
     
@@ -183,104 +218,128 @@ function GalleryContent() {
     }
   };
 
-  const fetchRanks = async (weekly: number, total: number) => {
+  // 2. Updated function with Types and proper checks
+  const fetchRanks = async (totalLikes: number = 0, monthlyLikes: number = 0) => {
     try {
-      const qSeason = query(collection(db, "users"), where("weeklyLikes", ">", weekly));
-      const qGlobal = query(collection(db, "users"), where("totalLikes", ">", total));
-      const [snapSeason, snapGlobal] = await Promise.all([
-        getCountFromServer(qSeason),
-        getCountFromServer(qGlobal)
-      ]);
-      setMyRank(snapSeason.data().count + 1);
-      setMyGlobalRank(snapGlobal.data().count + 1);
-    } catch (e) {
-      console.error("Rank fetch error:", e);
-    }
-  };
+      // If likes are undefined, we stop here to prevent Firestore errors
+      if (typeof totalLikes !== 'number' || typeof monthlyLikes !== 'number') return;
 
-  const checkAndResetSeason = async (uid: string, currentWeeklyLikes: number) => {
-    const userRef = doc(db, "users", uid);
-    const userSnap = await getDoc(userRef);
-    
-    if (userSnap.exists()) {
-      const userData = userSnap.data();
-      const lastReset = userData.lastReset?.toDate() || new Date(0);
-      const today = new Date();
-      
-      if (isSunday && today.toDateString() !== lastReset.toDateString()) {
-        const isTopOne = leaderboard[0]?.id === uid && currentWeeklyLikes > 0;
-        const isTopTwo = leaderboard[1]?.id === uid && currentWeeklyLikes > 0;
-        
-        await updateDoc(userRef, {
-          weeklyLikes: 0,
-          lastReset: today,
-          isSeasonWinner: isTopOne,
-          isSecondPlace: isTopTwo
-        });
-      }
+      // --- GLOBAL RANK CALCULATION ---
+      const qGlobal = query(
+        collection(db, "users"), 
+        where("totalLikes", ">", totalLikes)
+      );
+      const globalSnap = await getCountFromServer(qGlobal);
+      // Setting global rank (count of people above you + 1)
+      setMyGlobalRank(globalSnap.data().count + 1);
+
+      // --- MONTHLY RANK CALCULATION ---
+      const qMonthly = query(
+        collection(db, "users"), 
+        where("monthlyLikes", ">", monthlyLikes)
+      );
+      const monthlySnap = await getCountFromServer(qMonthly);
+      // Setting monthly rank
+      setMyMonthlyRank(monthlySnap.data().count + 1);
+
+    } catch (error) {
+      console.error("Error fetching ranks:", error);
+      // Safety fallback to prevent UI breakage
+      setMyGlobalRank(0);
+      setMyMonthlyRank(0);
     }
   };
 
   useEffect(() => {
     setMounted(true);
+    
     const timer = setInterval(() => {
-      const today = new Date();
-      const nextSun = new Date();
-      nextSun.setDate(today.getDate() + (today.getDay() === 0 ? 7 : 7 - today.getDay()));
-      nextSun.setHours(0, 0, 0, 0); 
+      const now = new Date();
+      // Targets Midnight of the 1st of next month
+      const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0);
       
-      const diff = nextSun.getTime() - today.getTime();
-      const d = Math.floor(diff / 86400000);
-      const h = Math.floor((diff / 3600000) % 24);
-      const m = Math.floor((diff / 60000) % 60);
+      const diff = nextMonth.getTime() - now.getTime();
       
       if (diff <= 0) {
-        setTimeLeft("RESETTING...");
+        setTimeLeft("SEASON RESETTING...");
       } else {
-        setTimeLeft(`ENDS IN: ${d}d ${h}h ${m}m`);
+        const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
+        const m = Math.floor((diff / (1000 * 60)) % 60);
+        const s = Math.floor((diff / 1000) % 60);
+        
+        // Fixed: Explicit type for 'num' to stop the error
+        const pad = (val: number) => String(val).padStart(2, '0');
+        
+        setTimeLeft(`${d}D ${pad(h)}H ${pad(m)}M ${pad(s)}S`);
       }
     }, 1000);
+
     return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
     if (!mounted) return;
+    
     let uid = localStorage.getItem('imagynex_uid') || 'u_' + Math.random().toString(36).substr(2, 9);
     localStorage.setItem('imagynex_uid', uid);
     setUserId(uid);
 
-    const unsubUser = onSnapshot(doc(db, "users", uid), (snap) => {
+    // 1. User Profile & Monthly Reset Logic
+    const unsubUser = onSnapshot(doc(db, "users", uid), async (snap) => {
       if (snap.exists()) {
-        const data = snap.data() as ArtistProfile;
-        setProfile({ ...data, id: uid });
+        const data = snap.data();
+        const now = new Date();
+        const lastReset = data.lastMonthlyReset?.toDate() || new Date(0);
+        
+        if (now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear()) {
+          await updateDoc(doc(db, "users", uid), {
+            monthlyLikes: 0,
+            lastMonthlyReset: now
+          });
+        }
+
+        setProfile({ ...data, id: uid } as ArtistProfile);
         setNewName(data.displayName);
-        fetchRanks(data.weeklyLikes, data.totalLikes);
-        if (isSunday) checkAndResetSeason(uid, data.weeklyLikes);
+        fetchRanks(data.totalLikes, data.monthlyLikes || 0);
       } else {
-        setDoc(doc(db, "users", uid), { 
+        await setDoc(doc(db, "users", uid), { 
           displayName: `Creator_${uid.slice(0, 4)}`, 
           totalLikes: 0, 
-          weeklyLikes: 0,
+          monthlyLikes: 0,
           totalCreations: 0,
           likedImages: [],
-          lastReset: new Date(),
-          isSeasonWinner: false,
-          isSecondPlace: false
+          lastMonthlyReset: new Date()
         }, { merge: true });
       }
     });
 
-    const qLeader = query(collection(db, "users"), orderBy("weeklyLikes", "desc"), limit(3));
-    const unsubLeader = onSnapshot(qLeader, (snap) => {
-      setLeaderboard(snap.docs.map(d => ({ id: d.id, ...d.data() } as ArtistProfile)));
-    });
-
-    const qGlobalLeader = query(collection(db, "users"), orderBy("totalLikes", "desc"), limit(3));
-    const unsubGlobalLeader = onSnapshot(qGlobalLeader, (snap) => {
+    // 2. Global Leaderboard (Total Likes ke basis par)
+    const qGlobal = query(collection(db, "users"), orderBy("totalLikes", "desc"), limit(10));
+    const unsubGlobal = onSnapshot(qGlobal, (snap) => {
       setGlobalLeaderboard(snap.docs.map(d => ({ id: d.id, ...d.data() } as ArtistProfile)));
     });
 
-    return () => { unsubUser(); unsubLeader(); unsubGlobalLeader(); };
+    // 3. NEW: Monthly Leaderboard (Season Rankers - Isse Hall of Fame chalega)
+    const qMonthly = query(
+      collection(db, "users"), 
+      orderBy("monthlyLikes", "desc"), 
+      limit(10)
+    );
+    
+    const unsubMonthly = onSnapshot(qMonthly, (snap) => {
+      setMonthlyLeaderboard(snap.docs.map(d => ({ 
+        id: d.id, 
+        ...d.data() 
+      } as ArtistProfile)));
+    });
+
+    // Cleanup: Teeno listeners ko band karna zaroori hai
+    return () => { 
+      unsubUser(); 
+      unsubGlobal(); 
+      unsubMonthly(); 
+    };
   }, [mounted]);
 
   const observer = useRef<IntersectionObserver | null>(null);
@@ -464,102 +523,50 @@ function GalleryContent() {
     }
   };
 
-  const deleteImage = async (
-    e: React.MouseEvent | React.TouchEvent,
-    imgId: string,
-    creatorId: string
-  ) => {
-    e.stopPropagation();
-
-    // This is your LocalStorage ID (e.g., "u_12345")
-    const currentUid = userId; 
-
-    // Check if the current user is actually the owner
-    if (creatorId !== currentUid) {
-      alert("Permission Denied: You can only delete images that you created on this browser.");
-      return;
-    }
-
-    const confirmDelete = window.confirm("Are you sure? This action will permanently remove this image from the gallery.");
-    
-    if (confirmDelete) {
-      try {
-        // 1. Delete the document from the 'gallery' collection
-        await deleteDoc(doc(db, "gallery", imgId));
-
-        // 2. Decrement the creation count in the 'users' collection
-        const userRef = doc(db, "users", currentUid);
-        await updateDoc(userRef, {
-          totalCreations: increment(-1)
-        });
-
-        // 3. Remove from the local UI state
-        setImages(prev => prev.filter(img => img.id !== imgId));
-        
-        alert("Creation successfully deleted.");
-      } catch (error: any) {
-        console.error("Firestore Delete Error:", error);
-        
-        if (error.code === 'permission-denied') {
-          alert("Database Error: Permission Denied. Please ensure your Firebase Security Rules are published.");
-        } else {
-          alert("An unexpected error occurred: " + error.message);
-        }
-      }
-    }
-  };
-
   const handleLike = async (e: React.MouseEvent, img: GalleryImage) => {
+    e.preventDefault();
     e.stopPropagation();
-    if (!profile || !userId) return;
+    
+    if (!userId || !profile) return;
+
+    // FIX 1: Change "images" to "gallery" to match your database
+    const imgRef = doc(db, "gallery", img.id); 
+    const userRef = doc(db, "users", userId);
+    const creatorRef = doc(db, "users", img.creatorId);
+    
     const isLiked = profile.likedImages?.includes(img.id);
-    await updateDoc(doc(db, "users", userId), { likedImages: isLiked ? arrayRemove(img.id) : arrayUnion(img.id) });
-    await updateDoc(doc(db, "gallery", img.id), { likesCount: increment(isLiked ? -1 : 1) });
-    if (img.creatorId) {
-      await updateDoc(doc(db, "users", img.creatorId), { 
-        totalLikes: increment(isLiked ? -1 : 1),
-        weeklyLikes: increment(isLiked ? -1 : 1) 
+    const isSelfLike = userId === img.creatorId;
+
+    try {
+      // 1. Update Current User's Liked List
+      await updateDoc(userRef, {
+        likedImages: isLiked ? arrayRemove(img.id) : arrayUnion(img.id)
       });
+
+      // 2. Update Image Like Count in the GALLERY collection
+      await updateDoc(imgRef, {
+        likesCount: increment(isLiked ? -1 : 1)
+      });
+
+      // 3. Update Creator's Stats (Only if it's not a self-like, 
+      // or handle carefully if it is to avoid double-updating userRef)
+      if (!isSelfLike) {
+        await updateDoc(creatorRef, {
+          totalLikes: increment(isLiked ? -1 : 1),
+          monthlyLikes: increment(isLiked ? -1 : 1)
+        });
+      } else {
+        // If liking own image, update the same profile doc for the stats
+        await updateDoc(userRef, {
+          totalLikes: increment(isLiked ? -1 : 1),
+          monthlyLikes: increment(isLiked ? -1 : 1)
+        });
+      }
+
+    } catch (err) {
+      console.error("Like failed:", err);
+      alert("Action failed. Please check your internet or Firebase rules.");
     }
-  };
-
-  const downloadImage = async (img: GalleryImage) => {
-    const response = await fetch(img.imageUrl);
-    const blob = await response.blob();
-    const bitmap = await createImageBitmap(blob);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    
-    if (!ctx) return;
-    
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    ctx.drawImage(bitmap, 0, 0);
-
-    const isOwn = img.creatorId === userId;
-    const is1stEligible = (isMonday || isTuesday) && profile?.isSeasonWinner && isOwn;
-    const is2ndEligible = isMonday && profile?.isSecondPlace && isOwn;
-
-    // Apply watermark if NOT eligible for unwatermarked version
-    if (!is1stEligible && !is2ndEligible) {
-      const fontSize = Math.floor(canvas.width * 0.04);
-      ctx.font = `bold ${fontSize}px sans-serif`;
-      ctx.fillStyle = "rgba(255, 255, 255, 0.5)"; // Increased opacity
-      ctx.textAlign = "right";
-      ctx.textBaseline = "bottom";
-
-      // Shadow for better visibility on light backgrounds
-      ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
-      ctx.shadowBlur = 10;
-
-      // Positioned at bottom right with padding
-      ctx.fillText("Imagynex.AI", canvas.width - 20, canvas.height - 20);
-    }
-
-    const link = document.createElement("a");
-    link.download = `Imagynex-${img.id}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
   };
 
   const updateNameGlobally = async () => {
@@ -735,158 +742,204 @@ function GalleryContent() {
                   <p className="text-[10px] font-bold text-zinc-400 uppercase mb-1">Database Weight</p>
                   <p className="text-3xl font-black text-emerald-500">{dbStats.storageMB} <span className="text-sm">MB</span></p>
                 </div>
-                <button onClick={fetchAdminStats} className="bg-white text-black rounded-3xl font-black uppercase text-[10px] hover:scale-95 transition-transform">Refresh Data</button>
+                {/* NEW: RESET BUTTON (First Week Active Only) */}
+                {(() => {
+                  // Logic: Check if today is between 1st and 7th of the month
+                  const today = new Date().getDate();
+                  const isFirstWeek = today >= 1 && today <= 7;
+
+                  return (
+                    <button 
+                      onClick={resetMonthlyLikes}
+                      disabled={!isFirstWeek}
+                      className={`relative overflow-hidden transition-all duration-300 rounded-3xl font-black uppercase text-[10px] flex flex-col items-center justify-center gap-1 p-4 md:p-0
+                        ${isFirstWeek 
+                          ? "bg-red-600/20 hover:bg-red-600 border border-red-500/50 text-red-500 hover:text-white cursor-pointer shadow-[0_0_20px_rgba(220,38,38,0.2)]" 
+                          : "bg-zinc-900/50 border border-white/5 text-zinc-600 cursor-not-allowed grayscale"
+                        }`}
+                    >
+                      <Flame size={18} className={isFirstWeek ? "animate-pulse" : "opacity-30"} />
+                      
+                      <span className="tracking-tighter">
+                        {isFirstWeek ? "Reset Season" : "Reset Locked"}
+                      </span>
+
+                      {/* Helper text for extra clarity */}
+                      {!isFirstWeek && (
+                        <span className="text-[7px] font-bold text-zinc-500 lowercase opacity-60">
+                          Opens on 1st-7th
+                        </span>
+                      )}
+                    </button>
+                  );
+                })()}
+                <button onClick={fetchAdminStats} className="bg-white text-black rounded-3xl font-black uppercase text-[10px] hover:scale-95 transition-transform">
+                  Refresh Data
+                </button>
               </div>
             </div>
           </div>
         )}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8 md:mb-12">
-            {/* GLOBAL RANK PROFILE CARD */}
-            <div className={`lg:col-span-4 bg-zinc-900/20 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border relative overflow-hidden group transition-all duration-500 ${
-                myGlobalRank === 1 ? 'border-yellow-500 shadow-[0_0_40px_-10px_rgba(234,179,8,0.4)]' :
-                myGlobalRank === 2 ? 'border-slate-400 shadow-[0_0_40px_-10px_rgba(148,163,184,0.3)]' :
-                myGlobalRank === 3 ? 'border-orange-600' : 'border-white/5'
-            }`}>
-               <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-600/10 blur-[80px] -mr-16 -mt-16"></div>
-               <div className="flex items-center gap-4 md:gap-6 relative z-10">
+            {/* GLOBAL & MONTHLY RANK PROFILE CARD */}
+          <div className={`lg:col-span-4 bg-zinc-900/20 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border relative overflow-hidden group transition-all duration-500 ${
+              myGlobalRank === 1 ? 'border-yellow-500 shadow-[0_0_40px_-10px_rgba(234,179,8,0.4)]' :
+              myGlobalRank === 2 ? 'border-slate-400 shadow-[0_0_40px_-10px_rgba(148,163,184,0.3)]' :
+              myGlobalRank === 3 ? 'border-orange-600' : 'border-white/5'
+          }`}>
+              {/* Decorative Background Glow */}
+              <div className={`absolute top-0 right-0 w-32 h-32 blur-[80px] -mr-16 -mt-16 transition-colors duration-500 ${
+                  myGlobalRank === 1 ? 'bg-yellow-500/20' : 'bg-indigo-600/10'
+              }`}></div>
+
+              <div className="flex items-center gap-4 md:gap-6 relative z-10">
+                  {/* Rank Icon Container */}
                   <div className={`w-14 h-14 md:w-20 md:h-20 rounded-2xl md:rounded-3xl flex items-center justify-center shadow-2xl transition-transform group-hover:scale-110 duration-500 ${
-                    myGlobalRank === 1 ? 'bg-gradient-to-br from-yellow-400 to-amber-600' : 
-                    myGlobalRank === 2 ? 'bg-gradient-to-br from-slate-300 to-slate-500' : 
-                    myGlobalRank === 3 ? 'bg-gradient-to-br from-orange-400 to-orange-700' : 
-                    'bg-zinc-800'
+                      myGlobalRank === 1 ? 'bg-gradient-to-br from-yellow-400 to-amber-600' : 
+                      myGlobalRank === 2 ? 'bg-gradient-to-br from-slate-300 to-slate-500' : 
+                      myGlobalRank === 3 ? 'bg-gradient-to-br from-orange-400 to-orange-700' : 
+                      'bg-zinc-800'
                   }`}>
-                     {myGlobalRank === 1 ? <Crown size={28} className="text-black/80" /> : 
-                      myGlobalRank === 2 ? <Medal size={28} className="text-black/80" /> : 
+                      {myGlobalRank === 1 ? <Crown size={28} className="text-black/80" /> : 
+                      myGlobalRank === 2 ? <ShieldCheck size={28} className="text-black/80" /> : 
+                      myGlobalRank === 3 ? <Zap size={28} className="text-black/80" /> : 
                       <User size={28} className="text-white" />}
                   </div>
+
                   <div className="flex-1">
-                     {isEditing ? (
-                       <input 
-                        value={newName} 
-                        onChange={e => setNewName(e.target.value)} 
-                        // Runs when you click away
-                        onBlur={updateNameGlobally} 
-                        // Runs when you press Enter
-                        onKeyDown={(e) => e.key === 'Enter' && updateNameGlobally()} 
-                        autoFocus 
-                        className="bg-zinc-800 border-2 border-indigo-500 rounded-xl px-3 py-1 font-black outline-none text-base md:text-lg w-full text-indigo-100"
-                      />
-                     ) : (
-                       <h2 onClick={() => setIsEditing(true)} className="text-lg md:text-2xl font-black uppercase italic tracking-tighter cursor-pointer flex items-center gap-2 hover:text-indigo-400 transition-all">
-                         {profile?.displayName} 
-                         {(myGlobalRank === 1 || myGlobalRank === 2 || myGlobalRank === 3) && <BadgeCheck size={18} className="text-indigo-400 fill-indigo-400/20" />}
-                         <Edit3 size={12} className="text-indigo-400 opacity-40"/>
-                       </h2>
-                     )}
-                     <div className="flex flex-col gap-1 mt-1">
-                         <div className="flex items-center gap-2">
-                           <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${myGlobalRank === 1 ? 'bg-yellow-400' : 'bg-indigo-500'}`}></div>
-                           <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Global Rank #{myGlobalRank}</p>
-                         </div>
-                         <div className="flex items-center gap-2">
-                           <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div>
-                           <p className="text-[9px] font-black text-yellow-500/80 uppercase tracking-widest">Season Rank #{myRank}</p>
-                         </div>
-                     </div>
-                  </div>
-               </div>
+                      {isEditing ? (
+                          <input 
+                              value={newName} 
+                              onChange={e => setNewName(e.target.value)} 
+                              onBlur={updateNameGlobally} 
+                              onKeyDown={(e) => e.key === 'Enter' && updateNameGlobally()} 
+                              autoFocus 
+                              className="bg-zinc-800 border-2 border-indigo-500 rounded-xl px-3 py-1 font-black outline-none text-base md:text-lg w-full text-indigo-100"
+                          />
+                      ) : (
+                          <div className="flex flex-col">
+                              <h2 onClick={() => setIsEditing(true)} className="text-lg md:text-2xl font-black uppercase italic tracking-tighter cursor-pointer flex items-center gap-2 hover:text-indigo-400 transition-all">
+                                  {profile?.displayName} 
+                                  {(profile && Number(myGlobalRank) >= 1 && Number(myGlobalRank) <= 3) && (
+                                    <BadgeCheck size={18} className="text-indigo-400 fill-indigo-400/20" />
+                                  )}
+                                <Edit3 size={12} className="text-indigo-400 opacity-40"/>
+                              </h2>
+                              {/* Prize Status Tag */}
+                              {myGlobalRank === 1 && (
+                                  <span className="text-[7px] font-black text-yellow-500 tracking-[0.2em] uppercase">Global Sovereign • Aura Active</span>
+                              )}
+                          </div>
+                      )}
 
-               <div className="grid grid-cols-3 gap-2 mt-6 md:mt-8 pt-6 border-t border-white/5">
-                  <div className="bg-white/5 p-3 rounded-2xl text-center border border-indigo-500/10">
-                     <p className="text-base md:text-lg font-black text-indigo-400">{profile?.totalLikes || 0}</p>
-                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-400">Total Likes</p>
-                  </div>
-                  <div className="bg-white/5 p-3 rounded-2xl text-center border border-yellow-500/10">
-                     <p className="text-base md:text-lg font-black text-yellow-500">{profile?.weeklyLikes || 0}</p>
-                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-400">Season</p>
-                  </div>
-                  <div className="bg-white/5 p-3 rounded-2xl text-center">
-                     <p className="text-base md:text-lg font-black text-white">{profile?.totalCreations || 0}</p>
-                     <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-400">Items</p>
-                  </div>
-               </div>
-            </div>
-
-          <div className="lg:col-span-8 bg-zinc-900/10 p-6 md:p-8 rounded-[32px] md:rounded-[40px] border border-white/5">
-              <div className="flex items-center gap-2 mb-6">
-                <Info size={16} className="text-indigo-500" />
-                <h4 className="text-xs md:text-sm font-black uppercase tracking-widest italic">Rewards Protocol</h4>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 md:p-5 bg-white/[0.03] border border-white/5 rounded-2xl md:rounded-3xl group hover:border-yellow-500/30 transition-all">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 bg-yellow-500/20 rounded-lg text-yellow-500"><Crown size={14} /></div>
-                    <p className="text-[10px] font-black uppercase">Champion Prize</p>
-                  </div>
-                  <p className="text-[9px] md:text-[10px] text-zinc-400 leading-relaxed font-bold">1st Place: <span className="text-white">NO WATERMARK</span> for <span className="text-yellow-500">2 Days</span> (Mon-Tue).</p>
-                </div>
-                <div className="p-4 md:p-5 bg-white/[0.03] border border-white/5 rounded-2xl md:rounded-3xl group hover:border-slate-400/30 transition-all">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 bg-slate-500/20 rounded-lg text-slate-400"><Medal size={14} /></div>
-                    <p className="text-[10px] font-black uppercase">Elite Prize</p>
-                  </div>
-                  <p className="text-[9px] md:text-[10px] text-zinc-400 leading-relaxed font-bold">2nd Place: <span className="text-white">NO WATERMARK</span> for <span className="text-slate-300">Monday</span>.</p>
-                </div>
-                <div className="md:col-span-2 p-3.5 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-3">
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-3">
-                        <TrendingUp size={14} className="text-indigo-500" />
-                        <div className="flex flex-col">
-                          <p className="text-[10px] font-black uppercase text-zinc-200 tracking-tight">
-                            Season: <span className="text-indigo-400">Mon 00:00 - Sun 23:59</span>
-                          </p>
-                          <p className="text-[8px] font-bold text-zinc-400 uppercase">
-                            Next Reset: This Sunday, Midnight
-                          </p>
-                        </div>
+                      <div className="flex flex-col gap-1 mt-2">
+                          {/* Global Stats */}
+                          <div className="flex items-center gap-2">
+                              <div className={`w-1.5 h-1.5 rounded-full ${myGlobalRank === 1 ? 'bg-yellow-400 animate-pulse' : 'bg-indigo-500'}`}></div>
+                              <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Global Rank #{myGlobalRank || '?'}</p>
+                          </div>
+                          
+                          {/* Monthly Stats */}
+                          <div className="flex items-center gap-2">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                              <p className="text-[9px] font-black text-emerald-500/80 uppercase tracking-widest">Monthly Rank #{myMonthlyRank || '?'}</p>
+                          </div>
                       </div>
+                  </div>
+              </div>
+
+              {/* Bottom Stats Grid */}
+              <div className="grid grid-cols-3 gap-2 mt-6 md:mt-8 pt-6 border-t border-white/5">
+                  <div className="bg-white/5 p-3 rounded-2xl text-center border border-indigo-500/10">
+                      <p className="text-base md:text-lg font-black text-indigo-400">{profile?.totalLikes || 0}</p>
+                      <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-400">Total Likes</p>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-2xl text-center border border-emerald-500/10">
+                      <p className="text-base md:text-lg font-black text-emerald-500">{profile?.monthlyLikes || 0}</p>
+                      <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-400">Monthly</p>
+                  </div>
+                  <div className="bg-white/5 p-3 rounded-2xl text-center border border-white/5">
+                      <p className="text-base md:text-lg font-black text-white">{profile?.totalCreations || 0}</p>
+                      <p className="text-[7px] md:text-[8px] font-black uppercase text-zinc-400">Items</p>
+                  </div>
+              </div>
+            </div>
+          </div>
+
+          {/* HALL OF FAME & SEASON PROTOCOL */}
+          <div className="lg:col-span-8 bg-zinc-900/20 border border-white/5 rounded-[32px] md:rounded-[40px] p-6 md:p-8 relative overflow-hidden group">
+            
+            {/* Header Section */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 relative z-10">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                  <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500">Active Monthly Season</h3>
+                </div>
+                <h2 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter">Hall of Fame</h2>
+              </div>
+
+              {/* Timer Display */}
+              <div className="bg-black/40 border border-emerald-500/30 px-4 py-2 rounded-2xl flex items-center gap-3 backdrop-blur-xl">
+                <div className="flex flex-col">
+                  <span className="text-[7px] font-black text-emerald-500 uppercase tracking-widest">Season Ends In</span>
+                  <span className="text-sm font-black text-white tabular-nums tracking-tight">{timeLeft}</span>
+                </div>
+                <TrendingUp size={20} className="text-emerald-500" />
+              </div>
+            </div>
+
+            {/* Top 3 Podium Grid - CHANGED TO monthlyLeaderboard */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 relative z-10">
+              {monthlyLeaderboard.slice(0, 3).map((artist, index) => (
+                <div key={artist.id} className={`p-5 rounded-[28px] border transition-all duration-500 hover:-translate-y-1 ${
+                  index === 0 ? 'bg-gradient-to-b from-yellow-500/10 to-transparent border-yellow-500/20 shadow-[0_20px_40px_-15px_rgba(234,179,8,0.15)]' :
+                  index === 1 ? 'bg-slate-400/5 border-slate-400/10' :
+                  'bg-orange-600/5 border-orange-600/10'
+                }`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className={`px-3 py-1 rounded-full text-[10px] font-black ${
+                      index === 0 ? 'bg-yellow-500 text-black' : 'bg-zinc-800 text-zinc-400'
+                    }`}>
+                      #{index + 1}
                     </div>
-                    <div className="bg-indigo-500/10 px-3 py-1.5 rounded-full border border-indigo-500/20 w-full md:w-auto text-center">
-                       <p className="text-[8px] font-black text-indigo-400 uppercase tracking-tighter">{timeLeft}</p>
-                    </div>
+                    {index === 0 && <Crown size={18} className="text-yellow-400" />}
+                  </div>
+                  <p className="text-xs font-black uppercase truncate text-zinc-100">{artist.displayName}</p>
+                  <div className="mt-2 flex items-baseline gap-1">
+                    <span className="text-xl font-black text-white">{artist.monthlyLikes || 0}</span>
+                    <span className="text-[8px] font-bold text-zinc-500 uppercase">Season Likes</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Prize Protocol Section */}
+            <div className="bg-black/40 border border-white/5 rounded-3xl p-5 relative z-10">
+              <div className="flex items-center gap-2 mb-4">
+                <Gift size={16} className="text-indigo-400" />
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Current Prize Pool</h4>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-1">
+                  <p className="text-[9px] font-black text-yellow-500 uppercase">Rank 1: Sovereign</p>
+                  <p className="text-[10px] text-zinc-300 font-medium leading-tight">Golden Profile Aura + Verified Badge + Feature on Home</p>
+                </div>
+                <div className="space-y-1 border-l border-white/5 md:pl-6">
+                  <p className="text-[9px] font-black text-slate-400 uppercase">Rank 2: Elite</p>
+                  <p className="text-[10px] text-zinc-300 font-medium leading-tight">Silver Profile Border + Verified Badge + High-Res Exports</p>
+                </div>
+                <div className="space-y-1 border-l border-white/5 md:pl-6">
+                  <p className="text-[9px] font-black text-orange-600 uppercase">Rank 3: Master</p>
+                  <p className="text-[10px] text-zinc-300 font-medium leading-tight">Bronze Badge + Early access to Neural Beta Styles</p>
                 </div>
               </div>
-          </div>
-        </div>
-
-        {/* Hall of Fame */}
-        <div className="mb-12">
-            <h4 className="text-lg md:text-xl font-black italic uppercase tracking-tighter mb-6 flex items-center gap-2 px-2">
-              <Star size={18} className="text-yellow-500 fill-yellow-500" /> Hall of Fame
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                 {leaderboard.map((artist, idx) => {
-                   const colors = [
-                     { bg: 'from-yellow-400 to-amber-600', border: 'border-yellow-500/40', icon: 'text-yellow-500' },
-                     { bg: 'from-slate-300 to-slate-500', border: 'border-slate-500/40', icon: 'text-slate-400' },
-                     { bg: 'from-orange-400 to-orange-700', border: 'border-orange-500/40', icon: 'text-orange-600' }
-                   ][idx] || { bg: 'from-zinc-600 to-zinc-800', border: 'border-white/5', icon: 'text-zinc-400' };
-
-                   return (
-                     <div key={artist.id} onClick={() => router.push(`/gallery?user=${artist.id}`)} className={`group relative p-4 rounded-2xl border transition-all duration-500 bg-gradient-to-b from-white/[0.03] to-transparent ${colors.border} cursor-pointer hover:-translate-y-1`}>
-                        <div className="flex items-center gap-4">
-                            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colors.bg} flex items-center justify-center shadow-xl`}>
-                               {idx === 0 ? <Crown size={20} className="text-black/80"/> : <span className="text-sm font-black text-black/80">{idx + 1}</span>}
-                            </div>
-                            <div className="flex-1">
-                               <p className="text-[10px] font-black uppercase italic truncate flex items-center gap-1">
-                                 {artist.displayName}
-                                 <BadgeCheck size={10} className="text-indigo-400" />
-                               </p>
-                               <div className="flex flex-col gap-0.5 mt-1">
-                                 <div className="flex items-center gap-1.5">
-                                   <Heart size={8} className={`${colors.icon}`} fill="currentColor"/>
-                                   <p className="text-[9px] font-bold text-zinc-400">{artist.weeklyLikes} Season Likes</p>
-                                 </div>
-                                 <p className="text-[7px] font-black text-yellow-500/70 uppercase">Season Rank #{idx + 1}</p>
-                               </div>
-                            </div>
-                        </div>
-                     </div>
-                   )
-                 })}
             </div>
-        </div>
+
+            {/* Decorative Background Icon */}
+            <Trophy size={180} className="absolute -bottom-10 -right-10 text-white/[0.02] pointer-events-none rotate-12" />
+          </div>
 
         {/* Search & Filter Sticky Bar */}
         <div className="sticky top-[64px] md:top-[88px] z-50 bg-[#020202]/95 backdrop-blur-xl py-4 space-y-4 border-b border-white/5 -mx-4 px-4 shadow-xl">
@@ -912,24 +965,26 @@ function GalleryContent() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mt-6">
             {images.map((img, idx) => {
-              // 1. LEADERBOARD RANK LOGIC (Ensure globalLeaderboard exists)
-              const isGlobalRank1 = globalLeaderboard?.[0]?.id === img.creatorId;
-              const isGlobalRank2 = globalLeaderboard?.[1]?.id === img.creatorId;
-              const isGlobalRank3 = globalLeaderboard?.[2]?.id === img.creatorId;
+              // 1. UPDATED RANK LOGIC: Global & Monthly
+              const isGlobalKing = globalLeaderboard?.[0]?.id === img.creatorId;
+              const isGlobalElite = globalLeaderboard?.[1]?.id === img.creatorId || globalLeaderboard?.[2]?.id === img.creatorId;
+              
+              // Checking monthly winners (assuming you'll have a monthlyLeaderboard state)
+              const isMonthlyWinner = monthlyLeaderboard?.[0]?.id === img.creatorId;
 
-              // 2. OWNERSHIP & PRIZE
+              // 2. OWNERSHIP & PRIZE LOGIC (Updated to Global Rank)
               const isOwn = img.creatorId === userId;
-              const is1stEligible = (isMonday || isTuesday) && profile?.isSeasonWinner && isOwn;
-              const is2ndEligible = isMonday && profile?.isSecondPlace && isOwn;
-              const hasPrize = is1stEligible || is2ndEligible;
+              
+              // Prize: Global Top 3 or Monthly Winner get stand-out effects
+              const hasPremiumStatus = (isGlobalKing || isGlobalElite || isMonthlyWinner) && isOwn;
 
-              // 3. FRAME STYLE LOGIC
-              const frameStyle = isGlobalRank1
-                ? "border-yellow-500 shadow-[0_0_25px_-5px_rgba(234,179,8,0.4)] ring-2 ring-yellow-500/20"
-                : isGlobalRank2
-                  ? "border-slate-400 shadow-[0_0_15px_-5px_rgba(148,163,184,0.3)]"
-                  : isGlobalRank3
-                    ? "border-orange-600/50"
+              // 3. UPDATED FRAME STYLE: Golden Aura for King
+              const frameStyle = isGlobalKing
+                ? "border-yellow-500 shadow-[0_0_50px_-12px_rgba(234,179,8,0.7)] ring-2 ring-yellow-500/30 scale-[1.01]" 
+                : isGlobalElite
+                  ? "border-indigo-500/50 shadow-[0_0_20px_-5px_rgba(99,102,241,0.3)]"
+                  : isMonthlyWinner
+                    ? "border-emerald-500/50 shadow-[0_0_15px_-5px_rgba(16,185,129,0.3)]"
                     : "border-white/5";
 
               return (
@@ -938,14 +993,13 @@ function GalleryContent() {
                   ref={idx === images.length - 1 ? lastImageElementRef : null}
                   className={`group relative w-full aspect-[4/5] bg-zinc-900 rounded-[24px] md:rounded-[40px] overflow-hidden border transition-all duration-500 ${frameStyle}`}
                 >
-                  {/* Gold Glow Overlay for Rank 1 */}
-                  {isGlobalRank1 && (
-                    <div className="absolute inset-0 bg-gradient-to-tr from-yellow-500/10 to-transparent pointer-events-none z-10 animate-pulse" />
+                  {/* GOLDEN AURA OVERLAY: Only for the Global King */}
+                  {isGlobalKing && (
+                    <div className="absolute inset-0 bg-gradient-to-tr from-yellow-500/20 via-transparent to-yellow-500/10 animate-pulse pointer-events-none z-10" />
                   )}
 
-                  {/* --- LINK START: Image aur Overlay ko wrap karein --- */}
+                  {/* --- LINK START --- */}
                   <Link href={`/gallery/${img.id}`} className="block w-full h-full cursor-zoom-in">
-                    {/* 1. Main Image */}
                     <img
                       src={img.imageUrl}
                       alt={`${img.prompt} - AI Image by Imagynex`} 
@@ -955,17 +1009,15 @@ function GalleryContent() {
                       crossOrigin="anonymous"
                     />
 
-                    {/* 2. SEO Prompt Overlay */}
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-500 z-10 flex flex-col items-center justify-center p-8 backdrop-blur-[2px]">
                       <p className="text-[11px] md:text-xs text-white/90 font-medium italic text-center line-clamp-4 mb-4 leading-relaxed">
                         "{img.prompt}"
                       </p>
                       
-                      {/* Note: Is button par click karne se link trigger na ho isliye e.stopPropagation() zaroori hai */}
                       <button 
                         onClick={(e) => {
-                          e.preventDefault(); // Link trigger hone se rokein
-                          e.stopPropagation(); // Parent click event ko rokein
+                          e.preventDefault();
+                          e.stopPropagation();
                           navigator.clipboard.writeText(img.prompt);
                           alert("Prompt copied!");
                         }}
@@ -980,21 +1032,28 @@ function GalleryContent() {
                   {/* TOP UI LAYER */}
                   <div className="absolute top-4 inset-x-4 flex justify-between items-start z-30">
                     <div className="flex flex-col gap-2">
-                      {/* 1. BADGES (Rank) */}
-                      {(isGlobalRank1 || isGlobalRank2 || isGlobalRank3) && (
+                      {/* 1. UPDATED BADGES: Using new Legend Titles */}
+                      {(isGlobalKing || isGlobalElite) && (
                         <div className={`p-1.5 rounded-lg backdrop-blur-md border flex items-center gap-1.5 shadow-2xl ${
-                          isGlobalRank1 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-500' :
-                          isGlobalRank2 ? 'bg-slate-400/20 border-slate-400/40 text-slate-300' :
-                          'bg-orange-600/20 border-orange-600/40 text-orange-500'
+                          isGlobalKing ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-500' :
+                          'bg-indigo-600/20 border-indigo-400/40 text-indigo-300'
                         }`}>
-                          {isGlobalRank1 ? <Crown size={12} /> : <ShieldCheck size={12} />}
+                          {isGlobalKing ? <Crown size={12} /> : <ShieldCheck size={12} />}
                           <span className="text-[7px] font-black uppercase tracking-tighter">
-                            {isGlobalRank1 ? "Global King" : isGlobalRank2 ? "Elite" : "Master"}
+                            {isGlobalKing ? "Global Sovereign" : "Legendary Elite"}
                           </span>
                         </div>
                       )}
 
-                      {/* 2. PRIVACY TOGGLE (If owner, shows below/beside badge) */}
+                      {/* Monthly Winner Badge */}
+                      {isMonthlyWinner && (
+                        <div className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 p-1.5 rounded-lg backdrop-blur-md flex items-center gap-1.5">
+                          <Sparkles size={12} />
+                          <span className="text-[7px] font-black uppercase tracking-tighter">Monthly Star</span>
+                        </div>
+                      )}
+
+                      {/* 2. PRIVACY TOGGLE */}
                       {isOwn && (
                         <button
                           onClick={(e) => togglePrivacy(e, img.id, !!img.isPrivate)}
@@ -1038,22 +1097,19 @@ function GalleryContent() {
                   {/* Bottom Info Overlay */}
                   <div className="absolute inset-x-0 bottom-0 p-4 md:p-6 bg-gradient-to-t from-black via-black/95 to-transparent flex flex-col gap-3 translate-y-4 group-hover:translate-y-0 transition-all duration-300 z-20">
                     <div className="flex items-center gap-2 px-1">
-                      <div className={`w-4 h-4 rounded-full flex items-center justify-center ${isGlobalRank1 ? 'bg-yellow-500' : 'bg-indigo-500'}`}>
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center ${isGlobalKing ? 'bg-yellow-500' : 'bg-indigo-500'}`}>
                         <User size={8} className="text-white" />
                       </div>
-                      <p className={`text-[9px] font-black uppercase tracking-tight ${isGlobalRank1 ? 'text-yellow-500' : 'text-indigo-400'}`}>
+                      <p className={`text-[9px] font-black uppercase tracking-tight ${isGlobalKing ? 'text-yellow-500' : 'text-indigo-400'}`}>
                         {img.creatorName || 'Anonymous Creator'}
                       </p>
                     </div>
 
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => downloadImage(img)}
-                        className={`flex-1 py-2.5 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${hasPrize ? 'bg-yellow-500 text-black shadow-[0_0_15px_rgba(234,179,8,0.5)]' : 'bg-white text-black'}`}
-                      >
-                        {hasPrize ? <Gift size={14} /> : <Download size={14} />}
-                        {hasPrize ? "No Watermark" : "Download"}
-                      </button>
+                      <DownloadButton 
+                        imageUrl={img.imageUrl} 
+                        watermarkText="Imagynex.AI" 
+                      />
                       <button
                         onClick={() => router.push(`/?prompt=${encodeURIComponent(img.prompt)}`)}
                         className="bg-zinc-800/80 p-2.5 rounded-lg border border-white/10 hover:bg-indigo-600 transition-colors"
